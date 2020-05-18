@@ -1,24 +1,55 @@
 # rk-tree
+Z-tree of ES6 version.
+## Install
+```
+yarn add rk-tree
+```
+## Usage
+Usage is same to zTree Api.
+```
+<template>
+  <div class="hello">
+    <ul
+      id="treeId"
+      class="ztree"
+    />
+  </div>
+</template>
 
-## Project setup
-```
-yarn install
-```
+<script>
+import { rkTree ,$} from "../../rkTree/rkTree.umd";
+import treeList from '../tree';
+export default {
+  name: 'HelloWorld',
+  data(){
+    return {
+      setting:{
+        data: {
+          key: {
+            name: "deviceName",
+            children: "childList"
+          }
+        },
+        check : {
+          enable : true,
+          chkStyle : "checkbox"
+        },
+      }
+    }
+  },
+  methods:{
+  },
+  mounted() {
+    rkTree
+      .init($('#treeId'), this.setting, treeList.result)
+      .expandAll(true);
+  }
+}
+</script>
 
-### Compiles and hot-reloads for development
-```
-yarn serve
-```
+<!-- Add "scoped" attribute to limit CSS to this component only -->
+<style scoped>
+  @import "../../rkTree/zTreeStyle/zTreeStyle.css";
+</style>
 
-### Compiles and minifies for production
 ```
-yarn build
-```
-
-### Lints and fixes files
-```
-yarn lint
-```
-
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).

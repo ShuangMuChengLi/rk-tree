@@ -1,5 +1,6 @@
 // vue.config.js
 
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 module.exports = {
     // 将 examples 目录添加为新的页面
     pages: {
@@ -12,6 +13,13 @@ module.exports = {
             filename: 'index.html'
         }
     },
+    configureWebpack:{
+        plugins: [
+            new CopyWebpackPlugin([
+                {from: 'packages/third-part-lib/ztree/css/zTreeStyle', to:  'zTreeStyle'}
+            ]),
+        ]
+    }
     // configureWebpack:{
     //     resolve: {
     //         alias: {
