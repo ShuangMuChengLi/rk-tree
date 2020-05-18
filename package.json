@@ -1,7 +1,8 @@
 {
   "name": "rk-tree",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "main": "rkTree/rkTree.umd.js",
   "scripts": {
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
