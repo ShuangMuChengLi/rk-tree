@@ -1,10 +1,11 @@
 <template>
-  <ul>
+  <div class="tree-wrapper">
     <rk-tree-item
       class="item"
       :model="treeData"
+      @itemClick="childClick"
     />
-  </ul>
+  </div>
 </template>
 
 <script>
@@ -17,13 +18,20 @@ export default {
     return {
       treeData: treeData.result
     };
+  },
+  methods:{
+    childClick(item){
+      this.$emit('itemClick', item);
+    }
   }
-
 };
 </script>
 
 <style scoped>
   .item {
     cursor: pointer;
+  }
+  .tree-wrapper{
+    padding: 0;
   }
 </style>

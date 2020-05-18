@@ -11,5 +11,12 @@ module.exports = {
             // 输出文件名
             filename: 'index.html'
         }
-    }
+    },
+    // configureWebpack:{
+    //     resolve: {
+    //         alias: {
+    //             vue$: "vue/dist/vue.esm.js", //加上这一句
+    //         }
+    //     },
+    // }
 }
