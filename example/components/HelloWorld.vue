@@ -8,7 +8,7 @@
 </template>
 
 <script>
-import { rkTree ,$} from "../../rkTree/rkTree.umd";
+import { rkTree ,$} from "../../rkTree/rkTree.umd.js";
 import treeList from '../tree';
 export default {
   name: 'HelloWorld',
@@ -21,10 +21,10 @@ export default {
             children: "childList"
           }
         },
-        check : {
-          enable : true,
-          chkStyle : "checkbox"
-        },
+        // check : {
+        //   enable : true,
+        //   chkStyle : "checkbox"
+        // },
       }
     }
   },

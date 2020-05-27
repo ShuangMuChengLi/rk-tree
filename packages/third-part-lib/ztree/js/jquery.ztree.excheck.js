@@ -10,7 +10,7 @@
  *
  * Date: 2020-04-29
  */
-import jQuery from './jquery-3.3.1.min';
+import jQuery from 'jQuery';
 (function ($) {
   //default consts of excheck
   var _consts = {

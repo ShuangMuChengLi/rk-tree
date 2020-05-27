@@ -10,11 +10,12 @@
     "lib": "vue-cli-service build --target lib --name rkTree --dest rkTree packages/ZTree.js"
   },
   "dependencies": {
-    "core-js": "^3.6.4",
-    "element-ui": "^2.13.1",
-    "vue": "^2.6.11"
+    "jquery": "^3.5.1"
   },
   "devDependencies": {
+    "core-js": "^3.6.4",
+    "vue": "^2.6.11",
+    "element-ui": "^2.13.1",
     "@babel/plugin-proposal-export-default-from": "^7.8.3",
     "@vue/cli-plugin-babel": "~4.3.0",
     "@vue/cli-plugin-eslint": "~4.3.0",

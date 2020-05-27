@@ -1,5 +1,10 @@
 // vue.config.js
-
+let externals = {};
+if (process.env.NODE_ENV === "production") {
+    externals = {
+        "jQuery":"jQuery"
+    }
+}
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 module.exports = {
     // 将 examples 目录添加为新的页面
@@ -18,7 +23,8 @@ module.exports = {
             new CopyWebpackPlugin([
                 {from: 'packages/third-part-lib/ztree/css/zTreeStyle', to:  'zTreeStyle'}
             ]),
-        ]
+        ],
+        externals : externals
     }
     // configureWebpack:{
     //     resolve: {
