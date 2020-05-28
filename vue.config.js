@@ -2,7 +2,7 @@
 let externals = {};
 if (process.env.NODE_ENV === "production") {
     externals = {
-        "jQuery":"jQuery"
+        "jquery":"jquery"
     }
 }
 const CopyWebpackPlugin = require('copy-webpack-plugin');

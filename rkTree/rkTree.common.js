@@ -1588,13 +1588,6 @@ module.exports = function (NAME) {
 
 /***/ }),
 
-/***/ "781b":
-/***/ (function(module, exports) {
-
-module.exports = require("jQuery");
-
-/***/ }),
-
 /***/ "7839":
 /***/ (function(module, exports) {
 
@@ -2832,8 +2825,8 @@ module.exports = function (argument) {
 /* harmony import */ var core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__("1276");
 /* harmony import */ var core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_12___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_12__);
 /* harmony import */ var E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__("53ca");
-/* harmony import */ var jQuery__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__("781b");
-/* harmony import */ var jQuery__WEBPACK_IMPORTED_MODULE_14___default = /*#__PURE__*/__webpack_require__.n(jQuery__WEBPACK_IMPORTED_MODULE_14__);
+/* harmony import */ var jquery__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__("c5e1");
+/* harmony import */ var jquery__WEBPACK_IMPORTED_MODULE_14___default = /*#__PURE__*/__webpack_require__.n(jquery__WEBPACK_IMPORTED_MODULE_14__);
 
 
 
@@ -5071,7 +5064,7 @@ module.exports = function (argument) {
   var zt = _$.fn.zTree,
       $$ = tools.$,
       consts = zt.consts;
-})(jQuery__WEBPACK_IMPORTED_MODULE_14___default.a);
+})(jquery__WEBPACK_IMPORTED_MODULE_14___default.a);
 /*
  * JQuery zTree excheck
  * v3.5.44
@@ -5798,7 +5791,7 @@ module.exports = function (argument) {
 
     return html;
   };
-})(jQuery__WEBPACK_IMPORTED_MODULE_14___default.a);
+})(jquery__WEBPACK_IMPORTED_MODULE_14___default.a);
 /*
  * JQuery zTree exedit
  * v3.5.44
@@ -7100,7 +7093,7 @@ module.exports = function (argument) {
 
     return !root.curEditNode && (_uCanDo ? _uCanDo.apply(view, arguments) : true);
   };
-})(jQuery__WEBPACK_IMPORTED_MODULE_14___default.a);
+})(jquery__WEBPACK_IMPORTED_MODULE_14___default.a);
 
 /***/ }),
 
@@ -7490,6 +7483,13 @@ module.exports = function (input, PREFERRED_STRING) {
 
 module.exports = false;
 
+
+/***/ }),
+
+/***/ "c5e1":
+/***/ (function(module, exports) {
+
+module.exports = require("jquery");
 
 /***/ }),
 
@@ -8781,15 +8781,15 @@ if (typeof window !== 'undefined') {
 // EXTERNAL MODULE: ./packages/third-part-lib/ztree/js/jquery.ztree.all.js
 var jquery_ztree_all = __webpack_require__("aa1b");
 
-// EXTERNAL MODULE: external "jQuery"
-var external_jQuery_ = __webpack_require__("781b");
-var external_jQuery_default = /*#__PURE__*/__webpack_require__.n(external_jQuery_);
+// EXTERNAL MODULE: external "jquery"
+var external_jquery_ = __webpack_require__("c5e1");
+var external_jquery_default = /*#__PURE__*/__webpack_require__.n(external_jquery_);
 
 // CONCATENATED MODULE: ./packages/ZTree.js
 
 
-var rkTree = external_jQuery_default.a.fn.zTree;
-var $ = external_jQuery_default.a;
+var rkTree = external_jquery_default.a.fn.zTree;
+var $ = external_jquery_default.a;
 // CONCATENATED MODULE: ./node_modules/@vue/cli-service/lib/commands/build/entry-lib-no-default.js
 
 

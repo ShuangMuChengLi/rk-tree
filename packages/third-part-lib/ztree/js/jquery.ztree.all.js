@@ -10,7 +10,7 @@
  *
  * Date: 2020-04-29
  */
-import jQuery from 'jQuery';
+import jQuery from 'jquery';
 (function ($) {
   var settings = {}, roots = {}, caches = {},
     //default consts of core
