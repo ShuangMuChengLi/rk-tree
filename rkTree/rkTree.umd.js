@@ -1720,6 +1720,38 @@ module.exports = Object.create || function create(O, Properties) {
 
 /***/ }),
 
+/***/ "7db0":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var $ = __webpack_require__("23e7");
+var $find = __webpack_require__("b727").find;
+var addToUnscopables = __webpack_require__("44d2");
+var arrayMethodUsesToLength = __webpack_require__("ae40");
+
+var FIND = 'find';
+var SKIPS_HOLES = true;
+
+var USES_TO_LENGTH = arrayMethodUsesToLength(FIND);
+
+// Shouldn't skip holes
+if (FIND in []) Array(1)[FIND](function () { SKIPS_HOLES = false; });
+
+// `Array.prototype.find` method
+// https://tc39.github.io/ecma262/#sec-array.prototype.find
+$({ target: 'Array', proto: true, forced: SKIPS_HOLES || !USES_TO_LENGTH }, {
+  find: function find(callbackfn /* , that = undefined */) {
+    return $find(this, callbackfn, arguments.length > 1 ? arguments[1] : undefined);
+  }
+});
+
+// https://tc39.github.io/ecma262/#sec-array.prototype-@@unscopables
+addToUnscopables(FIND);
+
+
+/***/ }),
+
 /***/ "7dd0":
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -1999,37 +2031,819 @@ module.exports = function (S, index, unicode) {
 
 /***/ }),
 
-/***/ "8f23":
+/***/ "90e3":
+/***/ (function(module, exports) {
+
+var id = 0;
+var postfix = Math.random();
+
+module.exports = function (key) {
+  return 'Symbol(' + String(key === undefined ? '' : key) + ')_' + (++id + postfix).toString(36);
+};
+
+
+/***/ }),
+
+/***/ "9112":
+/***/ (function(module, exports, __webpack_require__) {
+
+var DESCRIPTORS = __webpack_require__("83ab");
+var definePropertyModule = __webpack_require__("9bf2");
+var createPropertyDescriptor = __webpack_require__("5c6c");
+
+module.exports = DESCRIPTORS ? function (object, key, value) {
+  return definePropertyModule.f(object, key, createPropertyDescriptor(1, value));
+} : function (object, key, value) {
+  object[key] = value;
+  return object;
+};
+
+
+/***/ }),
+
+/***/ "9263":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var regexpFlags = __webpack_require__("ad6d");
+var stickyHelpers = __webpack_require__("9f7f");
+
+var nativeExec = RegExp.prototype.exec;
+// This always refers to the native implementation, because the
+// String#replace polyfill uses ./fix-regexp-well-known-symbol-logic.js,
+// which loads this file before patching the method.
+var nativeReplace = String.prototype.replace;
+
+var patchedExec = nativeExec;
+
+var UPDATES_LAST_INDEX_WRONG = (function () {
+  var re1 = /a/;
+  var re2 = /b*/g;
+  nativeExec.call(re1, 'a');
+  nativeExec.call(re2, 'a');
+  return re1.lastIndex !== 0 || re2.lastIndex !== 0;
+})();
+
+var UNSUPPORTED_Y = stickyHelpers.UNSUPPORTED_Y || stickyHelpers.BROKEN_CARET;
+
+// nonparticipating capturing group, copied from es5-shim's String#split patch.
+var NPCG_INCLUDED = /()??/.exec('')[1] !== undefined;
+
+var PATCH = UPDATES_LAST_INDEX_WRONG || NPCG_INCLUDED || UNSUPPORTED_Y;
+
+if (PATCH) {
+  patchedExec = function exec(str) {
+    var re = this;
+    var lastIndex, reCopy, match, i;
+    var sticky = UNSUPPORTED_Y && re.sticky;
+    var flags = regexpFlags.call(re);
+    var source = re.source;
+    var charsAdded = 0;
+    var strCopy = str;
+
+    if (sticky) {
+      flags = flags.replace('y', '');
+      if (flags.indexOf('g') === -1) {
+        flags += 'g';
+      }
+
+      strCopy = String(str).slice(re.lastIndex);
+      // Support anchored sticky behavior.
+      if (re.lastIndex > 0 && (!re.multiline || re.multiline && str[re.lastIndex - 1] !== '\n')) {
+        source = '(?: ' + source + ')';
+        strCopy = ' ' + strCopy;
+        charsAdded++;
+      }
+      // ^(? + rx + ) is needed, in combination with some str slicing, to
+      // simulate the 'y' flag.
+      reCopy = new RegExp('^(?:' + source + ')', flags);
+    }
+
+    if (NPCG_INCLUDED) {
+      reCopy = new RegExp('^' + source + '$(?!\\s)', flags);
+    }
+    if (UPDATES_LAST_INDEX_WRONG) lastIndex = re.lastIndex;
+
+    match = nativeExec.call(sticky ? reCopy : re, strCopy);
+
+    if (sticky) {
+      if (match) {
+        match.input = match.input.slice(charsAdded);
+        match[0] = match[0].slice(charsAdded);
+        match.index = re.lastIndex;
+        re.lastIndex += match[0].length;
+      } else re.lastIndex = 0;
+    } else if (UPDATES_LAST_INDEX_WRONG && match) {
+      re.lastIndex = re.global ? match.index + match[0].length : lastIndex;
+    }
+    if (NPCG_INCLUDED && match && match.length > 1) {
+      // Fix browsers whose `exec` methods don't consistently return `undefined`
+      // for NPCG, like IE8. NOTE: This doesn' work for /(.?)?/
+      nativeReplace.call(match[0], reCopy, function () {
+        for (i = 1; i < arguments.length - 2; i++) {
+          if (arguments[i] === undefined) match[i] = undefined;
+        }
+      });
+    }
+
+    return match;
+  };
+}
+
+module.exports = patchedExec;
+
+
+/***/ }),
+
+/***/ "94ca":
+/***/ (function(module, exports, __webpack_require__) {
+
+var fails = __webpack_require__("d039");
+
+var replacement = /#|\.prototype\./;
+
+var isForced = function (feature, detection) {
+  var value = data[normalize(feature)];
+  return value == POLYFILL ? true
+    : value == NATIVE ? false
+    : typeof detection == 'function' ? fails(detection)
+    : !!detection;
+};
+
+var normalize = isForced.normalize = function (string) {
+  return String(string).replace(replacement, '.').toLowerCase();
+};
+
+var data = isForced.data = {};
+var NATIVE = isForced.NATIVE = 'N';
+var POLYFILL = isForced.POLYFILL = 'P';
+
+module.exports = isForced;
+
+
+/***/ }),
+
+/***/ "99af":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var $ = __webpack_require__("23e7");
+var fails = __webpack_require__("d039");
+var isArray = __webpack_require__("e8b5");
+var isObject = __webpack_require__("861d");
+var toObject = __webpack_require__("7b0b");
+var toLength = __webpack_require__("50c4");
+var createProperty = __webpack_require__("8418");
+var arraySpeciesCreate = __webpack_require__("65f0");
+var arrayMethodHasSpeciesSupport = __webpack_require__("1dde");
+var wellKnownSymbol = __webpack_require__("b622");
+var V8_VERSION = __webpack_require__("2d00");
+
+var IS_CONCAT_SPREADABLE = wellKnownSymbol('isConcatSpreadable');
+var MAX_SAFE_INTEGER = 0x1FFFFFFFFFFFFF;
+var MAXIMUM_ALLOWED_INDEX_EXCEEDED = 'Maximum allowed index exceeded';
+
+// We can't use this feature detection in V8 since it causes
+// deoptimization and serious performance degradation
+// https://github.com/zloirock/core-js/issues/679
+var IS_CONCAT_SPREADABLE_SUPPORT = V8_VERSION >= 51 || !fails(function () {
+  var array = [];
+  array[IS_CONCAT_SPREADABLE] = false;
+  return array.concat()[0] !== array;
+});
+
+var SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('concat');
+
+var isConcatSpreadable = function (O) {
+  if (!isObject(O)) return false;
+  var spreadable = O[IS_CONCAT_SPREADABLE];
+  return spreadable !== undefined ? !!spreadable : isArray(O);
+};
+
+var FORCED = !IS_CONCAT_SPREADABLE_SUPPORT || !SPECIES_SUPPORT;
+
+// `Array.prototype.concat` method
+// https://tc39.github.io/ecma262/#sec-array.prototype.concat
+// with adding support of @@isConcatSpreadable and @@species
+$({ target: 'Array', proto: true, forced: FORCED }, {
+  concat: function concat(arg) { // eslint-disable-line no-unused-vars
+    var O = toObject(this);
+    var A = arraySpeciesCreate(O, 0);
+    var n = 0;
+    var i, k, length, len, E;
+    for (i = -1, length = arguments.length; i < length; i++) {
+      E = i === -1 ? O : arguments[i];
+      if (isConcatSpreadable(E)) {
+        len = toLength(E.length);
+        if (n + len > MAX_SAFE_INTEGER) throw TypeError(MAXIMUM_ALLOWED_INDEX_EXCEEDED);
+        for (k = 0; k < len; k++, n++) if (k in E) createProperty(A, n, E[k]);
+      } else {
+        if (n >= MAX_SAFE_INTEGER) throw TypeError(MAXIMUM_ALLOWED_INDEX_EXCEEDED);
+        createProperty(A, n++, E);
+      }
+    }
+    A.length = n;
+    return A;
+  }
+});
+
+
+/***/ }),
+
+/***/ "9bdd":
+/***/ (function(module, exports, __webpack_require__) {
+
+var anObject = __webpack_require__("825a");
+
+// call something on iterator step with safe closing on error
+module.exports = function (iterator, fn, value, ENTRIES) {
+  try {
+    return ENTRIES ? fn(anObject(value)[0], value[1]) : fn(value);
+  // 7.4.6 IteratorClose(iterator, completion)
+  } catch (error) {
+    var returnMethod = iterator['return'];
+    if (returnMethod !== undefined) anObject(returnMethod.call(iterator));
+    throw error;
+  }
+};
+
+
+/***/ }),
+
+/***/ "9bf2":
+/***/ (function(module, exports, __webpack_require__) {
+
+var DESCRIPTORS = __webpack_require__("83ab");
+var IE8_DOM_DEFINE = __webpack_require__("0cfb");
+var anObject = __webpack_require__("825a");
+var toPrimitive = __webpack_require__("c04e");
+
+var nativeDefineProperty = Object.defineProperty;
+
+// `Object.defineProperty` method
+// https://tc39.github.io/ecma262/#sec-object.defineproperty
+exports.f = DESCRIPTORS ? nativeDefineProperty : function defineProperty(O, P, Attributes) {
+  anObject(O);
+  P = toPrimitive(P, true);
+  anObject(Attributes);
+  if (IE8_DOM_DEFINE) try {
+    return nativeDefineProperty(O, P, Attributes);
+  } catch (error) { /* empty */ }
+  if ('get' in Attributes || 'set' in Attributes) throw TypeError('Accessors not supported');
+  if ('value' in Attributes) O[P] = Attributes.value;
+  return O;
+};
+
+
+/***/ }),
+
+/***/ "9ed3":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var IteratorPrototype = __webpack_require__("ae93").IteratorPrototype;
+var create = __webpack_require__("7c73");
+var createPropertyDescriptor = __webpack_require__("5c6c");
+var setToStringTag = __webpack_require__("d44e");
+var Iterators = __webpack_require__("3f8c");
+
+var returnThis = function () { return this; };
+
+module.exports = function (IteratorConstructor, NAME, next) {
+  var TO_STRING_TAG = NAME + ' Iterator';
+  IteratorConstructor.prototype = create(IteratorPrototype, { next: createPropertyDescriptor(1, next) });
+  setToStringTag(IteratorConstructor, TO_STRING_TAG, false, true);
+  Iterators[TO_STRING_TAG] = returnThis;
+  return IteratorConstructor;
+};
+
+
+/***/ }),
+
+/***/ "9f7f":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var fails = __webpack_require__("d039");
+
+// babel-minify transpiles RegExp('a', 'y') -> /a/y and it causes SyntaxError,
+// so we use an intermediate function.
+function RE(s, f) {
+  return RegExp(s, f);
+}
+
+exports.UNSUPPORTED_Y = fails(function () {
+  // babel-minify transpiles RegExp('a', 'y') -> /a/y and it causes SyntaxError
+  var re = RE('a', 'y');
+  re.lastIndex = 2;
+  return re.exec('abcd') != null;
+});
+
+exports.BROKEN_CARET = fails(function () {
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=773687
+  var re = RE('^r', 'gy');
+  re.lastIndex = 2;
+  return re.exec('str') != null;
+});
+
+
+/***/ }),
+
+/***/ "a15b":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var $ = __webpack_require__("23e7");
+var IndexedObject = __webpack_require__("44ad");
+var toIndexedObject = __webpack_require__("fc6a");
+var arrayMethodIsStrict = __webpack_require__("a640");
+
+var nativeJoin = [].join;
+
+var ES3_STRINGS = IndexedObject != Object;
+var STRICT_METHOD = arrayMethodIsStrict('join', ',');
+
+// `Array.prototype.join` method
+// https://tc39.github.io/ecma262/#sec-array.prototype.join
+$({ target: 'Array', proto: true, forced: ES3_STRINGS || !STRICT_METHOD }, {
+  join: function join(separator) {
+    return nativeJoin.call(toIndexedObject(this), separator === undefined ? ',' : separator);
+  }
+});
+
+
+/***/ }),
+
+/***/ "a434":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var $ = __webpack_require__("23e7");
+var toAbsoluteIndex = __webpack_require__("23cb");
+var toInteger = __webpack_require__("a691");
+var toLength = __webpack_require__("50c4");
+var toObject = __webpack_require__("7b0b");
+var arraySpeciesCreate = __webpack_require__("65f0");
+var createProperty = __webpack_require__("8418");
+var arrayMethodHasSpeciesSupport = __webpack_require__("1dde");
+var arrayMethodUsesToLength = __webpack_require__("ae40");
+
+var HAS_SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('splice');
+var USES_TO_LENGTH = arrayMethodUsesToLength('splice', { ACCESSORS: true, 0: 0, 1: 2 });
+
+var max = Math.max;
+var min = Math.min;
+var MAX_SAFE_INTEGER = 0x1FFFFFFFFFFFFF;
+var MAXIMUM_ALLOWED_LENGTH_EXCEEDED = 'Maximum allowed length exceeded';
+
+// `Array.prototype.splice` method
+// https://tc39.github.io/ecma262/#sec-array.prototype.splice
+// with adding support of @@species
+$({ target: 'Array', proto: true, forced: !HAS_SPECIES_SUPPORT || !USES_TO_LENGTH }, {
+  splice: function splice(start, deleteCount /* , ...items */) {
+    var O = toObject(this);
+    var len = toLength(O.length);
+    var actualStart = toAbsoluteIndex(start, len);
+    var argumentsLength = arguments.length;
+    var insertCount, actualDeleteCount, A, k, from, to;
+    if (argumentsLength === 0) {
+      insertCount = actualDeleteCount = 0;
+    } else if (argumentsLength === 1) {
+      insertCount = 0;
+      actualDeleteCount = len - actualStart;
+    } else {
+      insertCount = argumentsLength - 2;
+      actualDeleteCount = min(max(toInteger(deleteCount), 0), len - actualStart);
+    }
+    if (len + insertCount - actualDeleteCount > MAX_SAFE_INTEGER) {
+      throw TypeError(MAXIMUM_ALLOWED_LENGTH_EXCEEDED);
+    }
+    A = arraySpeciesCreate(O, actualDeleteCount);
+    for (k = 0; k < actualDeleteCount; k++) {
+      from = actualStart + k;
+      if (from in O) createProperty(A, k, O[from]);
+    }
+    A.length = actualDeleteCount;
+    if (insertCount < actualDeleteCount) {
+      for (k = actualStart; k < len - actualDeleteCount; k++) {
+        from = k + actualDeleteCount;
+        to = k + insertCount;
+        if (from in O) O[to] = O[from];
+        else delete O[to];
+      }
+      for (k = len; k > len - actualDeleteCount + insertCount; k--) delete O[k - 1];
+    } else if (insertCount > actualDeleteCount) {
+      for (k = len - actualDeleteCount; k > actualStart; k--) {
+        from = k + actualDeleteCount - 1;
+        to = k + insertCount - 1;
+        if (from in O) O[to] = O[from];
+        else delete O[to];
+      }
+    }
+    for (k = 0; k < insertCount; k++) {
+      O[k + actualStart] = arguments[k + 2];
+    }
+    O.length = len - actualDeleteCount + insertCount;
+    return A;
+  }
+});
+
+
+/***/ }),
+
+/***/ "a4d3":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var $ = __webpack_require__("23e7");
+var global = __webpack_require__("da84");
+var getBuiltIn = __webpack_require__("d066");
+var IS_PURE = __webpack_require__("c430");
+var DESCRIPTORS = __webpack_require__("83ab");
+var NATIVE_SYMBOL = __webpack_require__("4930");
+var USE_SYMBOL_AS_UID = __webpack_require__("fdbf");
+var fails = __webpack_require__("d039");
+var has = __webpack_require__("5135");
+var isArray = __webpack_require__("e8b5");
+var isObject = __webpack_require__("861d");
+var anObject = __webpack_require__("825a");
+var toObject = __webpack_require__("7b0b");
+var toIndexedObject = __webpack_require__("fc6a");
+var toPrimitive = __webpack_require__("c04e");
+var createPropertyDescriptor = __webpack_require__("5c6c");
+var nativeObjectCreate = __webpack_require__("7c73");
+var objectKeys = __webpack_require__("df75");
+var getOwnPropertyNamesModule = __webpack_require__("241c");
+var getOwnPropertyNamesExternal = __webpack_require__("057f");
+var getOwnPropertySymbolsModule = __webpack_require__("7418");
+var getOwnPropertyDescriptorModule = __webpack_require__("06cf");
+var definePropertyModule = __webpack_require__("9bf2");
+var propertyIsEnumerableModule = __webpack_require__("d1e7");
+var createNonEnumerableProperty = __webpack_require__("9112");
+var redefine = __webpack_require__("6eeb");
+var shared = __webpack_require__("5692");
+var sharedKey = __webpack_require__("f772");
+var hiddenKeys = __webpack_require__("d012");
+var uid = __webpack_require__("90e3");
+var wellKnownSymbol = __webpack_require__("b622");
+var wrappedWellKnownSymbolModule = __webpack_require__("e538");
+var defineWellKnownSymbol = __webpack_require__("746f");
+var setToStringTag = __webpack_require__("d44e");
+var InternalStateModule = __webpack_require__("69f3");
+var $forEach = __webpack_require__("b727").forEach;
+
+var HIDDEN = sharedKey('hidden');
+var SYMBOL = 'Symbol';
+var PROTOTYPE = 'prototype';
+var TO_PRIMITIVE = wellKnownSymbol('toPrimitive');
+var setInternalState = InternalStateModule.set;
+var getInternalState = InternalStateModule.getterFor(SYMBOL);
+var ObjectPrototype = Object[PROTOTYPE];
+var $Symbol = global.Symbol;
+var $stringify = getBuiltIn('JSON', 'stringify');
+var nativeGetOwnPropertyDescriptor = getOwnPropertyDescriptorModule.f;
+var nativeDefineProperty = definePropertyModule.f;
+var nativeGetOwnPropertyNames = getOwnPropertyNamesExternal.f;
+var nativePropertyIsEnumerable = propertyIsEnumerableModule.f;
+var AllSymbols = shared('symbols');
+var ObjectPrototypeSymbols = shared('op-symbols');
+var StringToSymbolRegistry = shared('string-to-symbol-registry');
+var SymbolToStringRegistry = shared('symbol-to-string-registry');
+var WellKnownSymbolsStore = shared('wks');
+var QObject = global.QObject;
+// Don't use setters in Qt Script, https://github.com/zloirock/core-js/issues/173
+var USE_SETTER = !QObject || !QObject[PROTOTYPE] || !QObject[PROTOTYPE].findChild;
+
+// fallback for old Android, https://code.google.com/p/v8/issues/detail?id=687
+var setSymbolDescriptor = DESCRIPTORS && fails(function () {
+  return nativeObjectCreate(nativeDefineProperty({}, 'a', {
+    get: function () { return nativeDefineProperty(this, 'a', { value: 7 }).a; }
+  })).a != 7;
+}) ? function (O, P, Attributes) {
+  var ObjectPrototypeDescriptor = nativeGetOwnPropertyDescriptor(ObjectPrototype, P);
+  if (ObjectPrototypeDescriptor) delete ObjectPrototype[P];
+  nativeDefineProperty(O, P, Attributes);
+  if (ObjectPrototypeDescriptor && O !== ObjectPrototype) {
+    nativeDefineProperty(ObjectPrototype, P, ObjectPrototypeDescriptor);
+  }
+} : nativeDefineProperty;
+
+var wrap = function (tag, description) {
+  var symbol = AllSymbols[tag] = nativeObjectCreate($Symbol[PROTOTYPE]);
+  setInternalState(symbol, {
+    type: SYMBOL,
+    tag: tag,
+    description: description
+  });
+  if (!DESCRIPTORS) symbol.description = description;
+  return symbol;
+};
+
+var isSymbol = USE_SYMBOL_AS_UID ? function (it) {
+  return typeof it == 'symbol';
+} : function (it) {
+  return Object(it) instanceof $Symbol;
+};
+
+var $defineProperty = function defineProperty(O, P, Attributes) {
+  if (O === ObjectPrototype) $defineProperty(ObjectPrototypeSymbols, P, Attributes);
+  anObject(O);
+  var key = toPrimitive(P, true);
+  anObject(Attributes);
+  if (has(AllSymbols, key)) {
+    if (!Attributes.enumerable) {
+      if (!has(O, HIDDEN)) nativeDefineProperty(O, HIDDEN, createPropertyDescriptor(1, {}));
+      O[HIDDEN][key] = true;
+    } else {
+      if (has(O, HIDDEN) && O[HIDDEN][key]) O[HIDDEN][key] = false;
+      Attributes = nativeObjectCreate(Attributes, { enumerable: createPropertyDescriptor(0, false) });
+    } return setSymbolDescriptor(O, key, Attributes);
+  } return nativeDefineProperty(O, key, Attributes);
+};
+
+var $defineProperties = function defineProperties(O, Properties) {
+  anObject(O);
+  var properties = toIndexedObject(Properties);
+  var keys = objectKeys(properties).concat($getOwnPropertySymbols(properties));
+  $forEach(keys, function (key) {
+    if (!DESCRIPTORS || $propertyIsEnumerable.call(properties, key)) $defineProperty(O, key, properties[key]);
+  });
+  return O;
+};
+
+var $create = function create(O, Properties) {
+  return Properties === undefined ? nativeObjectCreate(O) : $defineProperties(nativeObjectCreate(O), Properties);
+};
+
+var $propertyIsEnumerable = function propertyIsEnumerable(V) {
+  var P = toPrimitive(V, true);
+  var enumerable = nativePropertyIsEnumerable.call(this, P);
+  if (this === ObjectPrototype && has(AllSymbols, P) && !has(ObjectPrototypeSymbols, P)) return false;
+  return enumerable || !has(this, P) || !has(AllSymbols, P) || has(this, HIDDEN) && this[HIDDEN][P] ? enumerable : true;
+};
+
+var $getOwnPropertyDescriptor = function getOwnPropertyDescriptor(O, P) {
+  var it = toIndexedObject(O);
+  var key = toPrimitive(P, true);
+  if (it === ObjectPrototype && has(AllSymbols, key) && !has(ObjectPrototypeSymbols, key)) return;
+  var descriptor = nativeGetOwnPropertyDescriptor(it, key);
+  if (descriptor && has(AllSymbols, key) && !(has(it, HIDDEN) && it[HIDDEN][key])) {
+    descriptor.enumerable = true;
+  }
+  return descriptor;
+};
+
+var $getOwnPropertyNames = function getOwnPropertyNames(O) {
+  var names = nativeGetOwnPropertyNames(toIndexedObject(O));
+  var result = [];
+  $forEach(names, function (key) {
+    if (!has(AllSymbols, key) && !has(hiddenKeys, key)) result.push(key);
+  });
+  return result;
+};
+
+var $getOwnPropertySymbols = function getOwnPropertySymbols(O) {
+  var IS_OBJECT_PROTOTYPE = O === ObjectPrototype;
+  var names = nativeGetOwnPropertyNames(IS_OBJECT_PROTOTYPE ? ObjectPrototypeSymbols : toIndexedObject(O));
+  var result = [];
+  $forEach(names, function (key) {
+    if (has(AllSymbols, key) && (!IS_OBJECT_PROTOTYPE || has(ObjectPrototype, key))) {
+      result.push(AllSymbols[key]);
+    }
+  });
+  return result;
+};
+
+// `Symbol` constructor
+// https://tc39.github.io/ecma262/#sec-symbol-constructor
+if (!NATIVE_SYMBOL) {
+  $Symbol = function Symbol() {
+    if (this instanceof $Symbol) throw TypeError('Symbol is not a constructor');
+    var description = !arguments.length || arguments[0] === undefined ? undefined : String(arguments[0]);
+    var tag = uid(description);
+    var setter = function (value) {
+      if (this === ObjectPrototype) setter.call(ObjectPrototypeSymbols, value);
+      if (has(this, HIDDEN) && has(this[HIDDEN], tag)) this[HIDDEN][tag] = false;
+      setSymbolDescriptor(this, tag, createPropertyDescriptor(1, value));
+    };
+    if (DESCRIPTORS && USE_SETTER) setSymbolDescriptor(ObjectPrototype, tag, { configurable: true, set: setter });
+    return wrap(tag, description);
+  };
+
+  redefine($Symbol[PROTOTYPE], 'toString', function toString() {
+    return getInternalState(this).tag;
+  });
+
+  redefine($Symbol, 'withoutSetter', function (description) {
+    return wrap(uid(description), description);
+  });
+
+  propertyIsEnumerableModule.f = $propertyIsEnumerable;
+  definePropertyModule.f = $defineProperty;
+  getOwnPropertyDescriptorModule.f = $getOwnPropertyDescriptor;
+  getOwnPropertyNamesModule.f = getOwnPropertyNamesExternal.f = $getOwnPropertyNames;
+  getOwnPropertySymbolsModule.f = $getOwnPropertySymbols;
+
+  wrappedWellKnownSymbolModule.f = function (name) {
+    return wrap(wellKnownSymbol(name), name);
+  };
+
+  if (DESCRIPTORS) {
+    // https://github.com/tc39/proposal-Symbol-description
+    nativeDefineProperty($Symbol[PROTOTYPE], 'description', {
+      configurable: true,
+      get: function description() {
+        return getInternalState(this).description;
+      }
+    });
+    if (!IS_PURE) {
+      redefine(ObjectPrototype, 'propertyIsEnumerable', $propertyIsEnumerable, { unsafe: true });
+    }
+  }
+}
+
+$({ global: true, wrap: true, forced: !NATIVE_SYMBOL, sham: !NATIVE_SYMBOL }, {
+  Symbol: $Symbol
+});
+
+$forEach(objectKeys(WellKnownSymbolsStore), function (name) {
+  defineWellKnownSymbol(name);
+});
+
+$({ target: SYMBOL, stat: true, forced: !NATIVE_SYMBOL }, {
+  // `Symbol.for` method
+  // https://tc39.github.io/ecma262/#sec-symbol.for
+  'for': function (key) {
+    var string = String(key);
+    if (has(StringToSymbolRegistry, string)) return StringToSymbolRegistry[string];
+    var symbol = $Symbol(string);
+    StringToSymbolRegistry[string] = symbol;
+    SymbolToStringRegistry[symbol] = string;
+    return symbol;
+  },
+  // `Symbol.keyFor` method
+  // https://tc39.github.io/ecma262/#sec-symbol.keyfor
+  keyFor: function keyFor(sym) {
+    if (!isSymbol(sym)) throw TypeError(sym + ' is not a symbol');
+    if (has(SymbolToStringRegistry, sym)) return SymbolToStringRegistry[sym];
+  },
+  useSetter: function () { USE_SETTER = true; },
+  useSimple: function () { USE_SETTER = false; }
+});
+
+$({ target: 'Object', stat: true, forced: !NATIVE_SYMBOL, sham: !DESCRIPTORS }, {
+  // `Object.create` method
+  // https://tc39.github.io/ecma262/#sec-object.create
+  create: $create,
+  // `Object.defineProperty` method
+  // https://tc39.github.io/ecma262/#sec-object.defineproperty
+  defineProperty: $defineProperty,
+  // `Object.defineProperties` method
+  // https://tc39.github.io/ecma262/#sec-object.defineproperties
+  defineProperties: $defineProperties,
+  // `Object.getOwnPropertyDescriptor` method
+  // https://tc39.github.io/ecma262/#sec-object.getownpropertydescriptors
+  getOwnPropertyDescriptor: $getOwnPropertyDescriptor
+});
+
+$({ target: 'Object', stat: true, forced: !NATIVE_SYMBOL }, {
+  // `Object.getOwnPropertyNames` method
+  // https://tc39.github.io/ecma262/#sec-object.getownpropertynames
+  getOwnPropertyNames: $getOwnPropertyNames,
+  // `Object.getOwnPropertySymbols` method
+  // https://tc39.github.io/ecma262/#sec-object.getownpropertysymbols
+  getOwnPropertySymbols: $getOwnPropertySymbols
+});
+
+// Chrome 38 and 39 `Object.getOwnPropertySymbols` fails on primitives
+// https://bugs.chromium.org/p/v8/issues/detail?id=3443
+$({ target: 'Object', stat: true, forced: fails(function () { getOwnPropertySymbolsModule.f(1); }) }, {
+  getOwnPropertySymbols: function getOwnPropertySymbols(it) {
+    return getOwnPropertySymbolsModule.f(toObject(it));
+  }
+});
+
+// `JSON.stringify` method behavior with symbols
+// https://tc39.github.io/ecma262/#sec-json.stringify
+if ($stringify) {
+  var FORCED_JSON_STRINGIFY = !NATIVE_SYMBOL || fails(function () {
+    var symbol = $Symbol();
+    // MS Edge converts symbol values to JSON as {}
+    return $stringify([symbol]) != '[null]'
+      // WebKit converts symbol values to JSON as null
+      || $stringify({ a: symbol }) != '{}'
+      // V8 throws on boxed symbols
+      || $stringify(Object(symbol)) != '{}';
+  });
+
+  $({ target: 'JSON', stat: true, forced: FORCED_JSON_STRINGIFY }, {
+    // eslint-disable-next-line no-unused-vars
+    stringify: function stringify(it, replacer, space) {
+      var args = [it];
+      var index = 1;
+      var $replacer;
+      while (arguments.length > index) args.push(arguments[index++]);
+      $replacer = replacer;
+      if (!isObject(replacer) && it === undefined || isSymbol(it)) return; // IE8 returns string on undefined
+      if (!isArray(replacer)) replacer = function (key, value) {
+        if (typeof $replacer == 'function') value = $replacer.call(this, key, value);
+        if (!isSymbol(value)) return value;
+      };
+      args[1] = replacer;
+      return $stringify.apply(null, args);
+    }
+  });
+}
+
+// `Symbol.prototype[@@toPrimitive]` method
+// https://tc39.github.io/ecma262/#sec-symbol.prototype-@@toprimitive
+if (!$Symbol[PROTOTYPE][TO_PRIMITIVE]) {
+  createNonEnumerableProperty($Symbol[PROTOTYPE], TO_PRIMITIVE, $Symbol[PROTOTYPE].valueOf);
+}
+// `Symbol.prototype[@@toStringTag]` property
+// https://tc39.github.io/ecma262/#sec-symbol.prototype-@@tostringtag
+setToStringTag($Symbol, SYMBOL);
+
+hiddenKeys[HIDDEN] = true;
+
+
+/***/ }),
+
+/***/ "a640":
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+var fails = __webpack_require__("d039");
+
+module.exports = function (METHOD_NAME, argument) {
+  var method = [][METHOD_NAME];
+  return !!method && fails(function () {
+    // eslint-disable-next-line no-useless-call,no-throw-literal
+    method.call(null, argument || function () { throw 1; }, 1);
+  });
+};
+
+
+/***/ }),
+
+/***/ "a691":
+/***/ (function(module, exports) {
+
+var ceil = Math.ceil;
+var floor = Math.floor;
+
+// `ToInteger` abstract operation
+// https://tc39.github.io/ecma262/#sec-tointeger
+module.exports = function (argument) {
+  return isNaN(argument = +argument) ? 0 : (argument > 0 ? floor : ceil)(argument);
+};
+
+
+/***/ }),
+
+/***/ "aa1b":
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony import */ var core_js_modules_es_array_concat__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__("99af");
 /* harmony import */ var core_js_modules_es_array_concat__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_concat__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var core_js_modules_es_array_index_of__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__("c975");
-/* harmony import */ var core_js_modules_es_array_index_of__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_index_of__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var core_js_modules_es_array_join__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__("a15b");
-/* harmony import */ var core_js_modules_es_array_join__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_join__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var core_js_modules_es_array_last_index_of__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__("baa5");
-/* harmony import */ var core_js_modules_es_array_last_index_of__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_last_index_of__WEBPACK_IMPORTED_MODULE_3__);
-/* harmony import */ var core_js_modules_es_array_splice__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__("a434");
-/* harmony import */ var core_js_modules_es_array_splice__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_splice__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var core_js_modules_es_function_name__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__("b0c0");
-/* harmony import */ var core_js_modules_es_function_name__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_function_name__WEBPACK_IMPORTED_MODULE_5__);
-/* harmony import */ var core_js_modules_es_object_to_string__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__("d3b7");
-/* harmony import */ var core_js_modules_es_object_to_string__WEBPACK_IMPORTED_MODULE_6___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_object_to_string__WEBPACK_IMPORTED_MODULE_6__);
-/* harmony import */ var core_js_modules_es_promise__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__("e6cf");
-/* harmony import */ var core_js_modules_es_promise__WEBPACK_IMPORTED_MODULE_7___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_promise__WEBPACK_IMPORTED_MODULE_7__);
-/* harmony import */ var core_js_modules_es_regexp_exec__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__("ac1f");
-/* harmony import */ var core_js_modules_es_regexp_exec__WEBPACK_IMPORTED_MODULE_8___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_regexp_exec__WEBPACK_IMPORTED_MODULE_8__);
-/* harmony import */ var core_js_modules_es_regexp_to_string__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__("25f0");
-/* harmony import */ var core_js_modules_es_regexp_to_string__WEBPACK_IMPORTED_MODULE_9___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_regexp_to_string__WEBPACK_IMPORTED_MODULE_9__);
-/* harmony import */ var core_js_modules_es_string_replace__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__("5319");
-/* harmony import */ var core_js_modules_es_string_replace__WEBPACK_IMPORTED_MODULE_10___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_string_replace__WEBPACK_IMPORTED_MODULE_10__);
-/* harmony import */ var core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__("1276");
-/* harmony import */ var core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_11___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_11__);
-/* harmony import */ var E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__("53ca");
-/* harmony import */ var jQuery__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__("781b");
-/* harmony import */ var jQuery__WEBPACK_IMPORTED_MODULE_13___default = /*#__PURE__*/__webpack_require__.n(jQuery__WEBPACK_IMPORTED_MODULE_13__);
+/* harmony import */ var core_js_modules_es_array_find__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__("7db0");
+/* harmony import */ var core_js_modules_es_array_find__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_find__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var core_js_modules_es_array_index_of__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__("c975");
+/* harmony import */ var core_js_modules_es_array_index_of__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_index_of__WEBPACK_IMPORTED_MODULE_2__);
+/* harmony import */ var core_js_modules_es_array_join__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__("a15b");
+/* harmony import */ var core_js_modules_es_array_join__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_join__WEBPACK_IMPORTED_MODULE_3__);
+/* harmony import */ var core_js_modules_es_array_last_index_of__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__("baa5");
+/* harmony import */ var core_js_modules_es_array_last_index_of__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_last_index_of__WEBPACK_IMPORTED_MODULE_4__);
+/* harmony import */ var core_js_modules_es_array_splice__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__("a434");
+/* harmony import */ var core_js_modules_es_array_splice__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_array_splice__WEBPACK_IMPORTED_MODULE_5__);
+/* harmony import */ var core_js_modules_es_function_name__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__("b0c0");
+/* harmony import */ var core_js_modules_es_function_name__WEBPACK_IMPORTED_MODULE_6___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_function_name__WEBPACK_IMPORTED_MODULE_6__);
+/* harmony import */ var core_js_modules_es_object_to_string__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__("d3b7");
+/* harmony import */ var core_js_modules_es_object_to_string__WEBPACK_IMPORTED_MODULE_7___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_object_to_string__WEBPACK_IMPORTED_MODULE_7__);
+/* harmony import */ var core_js_modules_es_promise__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__("e6cf");
+/* harmony import */ var core_js_modules_es_promise__WEBPACK_IMPORTED_MODULE_8___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_promise__WEBPACK_IMPORTED_MODULE_8__);
+/* harmony import */ var core_js_modules_es_regexp_exec__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__("ac1f");
+/* harmony import */ var core_js_modules_es_regexp_exec__WEBPACK_IMPORTED_MODULE_9___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_regexp_exec__WEBPACK_IMPORTED_MODULE_9__);
+/* harmony import */ var core_js_modules_es_regexp_to_string__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__("25f0");
+/* harmony import */ var core_js_modules_es_regexp_to_string__WEBPACK_IMPORTED_MODULE_10___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_regexp_to_string__WEBPACK_IMPORTED_MODULE_10__);
+/* harmony import */ var core_js_modules_es_string_replace__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__("5319");
+/* harmony import */ var core_js_modules_es_string_replace__WEBPACK_IMPORTED_MODULE_11___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_string_replace__WEBPACK_IMPORTED_MODULE_11__);
+/* harmony import */ var core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__("1276");
+/* harmony import */ var core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_12___default = /*#__PURE__*/__webpack_require__.n(core_js_modules_es_string_split__WEBPACK_IMPORTED_MODULE_12__);
+/* harmony import */ var E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__("53ca");
+/* harmony import */ var jQuery__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__("781b");
+/* harmony import */ var jQuery__WEBPACK_IMPORTED_MODULE_14___default = /*#__PURE__*/__webpack_require__.n(jQuery__WEBPACK_IMPORTED_MODULE_14__);
+
 
 
 
@@ -3025,7 +3839,7 @@ module.exports = function (S, index, unicode) {
       var o = tools.isArray(obj) ? [] : {};
 
       for (var i in obj) {
-        o[i] = obj[i] instanceof Date ? new Date(obj[i].getTime()) : Object(E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_12__[/* default */ "a"])(obj[i]) === "object" ? tools.clone(obj[i]) : obj[i];
+        o[i] = obj[i] instanceof Date ? new Date(obj[i].getTime()) : Object(E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_13__[/* default */ "a"])(obj[i]) === "object" ? tools.clone(obj[i]) : obj[i];
       }
 
       return o;
@@ -3037,8 +3851,8 @@ module.exports = function (S, index, unicode) {
       return Object.prototype.toString.apply(arr) === "[object Array]";
     },
     isElement: function isElement(o) {
-      return (typeof HTMLElement === "undefined" ? "undefined" : Object(E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_12__[/* default */ "a"])(HTMLElement)) === "object" ? o instanceof HTMLElement : //DOM2
-      o && Object(E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_12__[/* default */ "a"])(o) === "object" && o !== null && o.nodeType === 1 && typeof o.nodeName === "string";
+      return (typeof HTMLElement === "undefined" ? "undefined" : Object(E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_13__[/* default */ "a"])(HTMLElement)) === "object" ? o instanceof HTMLElement : //DOM2
+      o && Object(E_github_project_rk_tree_node_modules_babel_runtime_helpers_esm_typeof__WEBPACK_IMPORTED_MODULE_13__[/* default */ "a"])(o) === "object" && o !== null && o.nodeType === 1 && typeof o.nodeName === "string";
     },
     $: function $(node, exp, setting) {
       if (!!exp && typeof exp != "string") {
@@ -4266,786 +5080,2036 @@ module.exports = function (S, index, unicode) {
   var zt = _$.fn.zTree,
       $$ = tools.$,
       consts = zt.consts;
-})(jQuery__WEBPACK_IMPORTED_MODULE_13___default.a);
-
-/***/ }),
-
-/***/ "90e3":
-/***/ (function(module, exports) {
-
-var id = 0;
-var postfix = Math.random();
-
-module.exports = function (key) {
-  return 'Symbol(' + String(key === undefined ? '' : key) + ')_' + (++id + postfix).toString(36);
-};
-
-
-/***/ }),
-
-/***/ "9112":
-/***/ (function(module, exports, __webpack_require__) {
-
-var DESCRIPTORS = __webpack_require__("83ab");
-var definePropertyModule = __webpack_require__("9bf2");
-var createPropertyDescriptor = __webpack_require__("5c6c");
-
-module.exports = DESCRIPTORS ? function (object, key, value) {
-  return definePropertyModule.f(object, key, createPropertyDescriptor(1, value));
-} : function (object, key, value) {
-  object[key] = value;
-  return object;
-};
+})(jQuery__WEBPACK_IMPORTED_MODULE_14___default.a);
+/*
+ * JQuery zTree excheck
+ * v3.5.44
+ * http://treejs.cn/
+ *
+ * Copyright (c) 2010 Hunter.z
+ *
+ * Licensed same as jquery - MIT License
+ * http://www.opensource.org/licenses/mit-license.php
+ *
+ * Date: 2020-04-29
+ */
 
 
-/***/ }),
-
-/***/ "9263":
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-var regexpFlags = __webpack_require__("ad6d");
-var stickyHelpers = __webpack_require__("9f7f");
-
-var nativeExec = RegExp.prototype.exec;
-// This always refers to the native implementation, because the
-// String#replace polyfill uses ./fix-regexp-well-known-symbol-logic.js,
-// which loads this file before patching the method.
-var nativeReplace = String.prototype.replace;
-
-var patchedExec = nativeExec;
-
-var UPDATES_LAST_INDEX_WRONG = (function () {
-  var re1 = /a/;
-  var re2 = /b*/g;
-  nativeExec.call(re1, 'a');
-  nativeExec.call(re2, 'a');
-  return re1.lastIndex !== 0 || re2.lastIndex !== 0;
-})();
-
-var UNSUPPORTED_Y = stickyHelpers.UNSUPPORTED_Y || stickyHelpers.BROKEN_CARET;
-
-// nonparticipating capturing group, copied from es5-shim's String#split patch.
-var NPCG_INCLUDED = /()??/.exec('')[1] !== undefined;
-
-var PATCH = UPDATES_LAST_INDEX_WRONG || NPCG_INCLUDED || UNSUPPORTED_Y;
-
-if (PATCH) {
-  patchedExec = function exec(str) {
-    var re = this;
-    var lastIndex, reCopy, match, i;
-    var sticky = UNSUPPORTED_Y && re.sticky;
-    var flags = regexpFlags.call(re);
-    var source = re.source;
-    var charsAdded = 0;
-    var strCopy = str;
-
-    if (sticky) {
-      flags = flags.replace('y', '');
-      if (flags.indexOf('g') === -1) {
-        flags += 'g';
+(function ($) {
+  //default consts of excheck
+  var _consts = {
+    event: {
+      CHECK: "ztree_check"
+    },
+    id: {
+      CHECK: "_check"
+    },
+    checkbox: {
+      STYLE: "checkbox",
+      DEFAULT: "chk",
+      DISABLED: "disable",
+      FALSE: "false",
+      TRUE: "true",
+      FULL: "full",
+      PART: "part",
+      FOCUS: "focus"
+    },
+    radio: {
+      STYLE: "radio",
+      TYPE_ALL: "all",
+      TYPE_LEVEL: "level"
+    }
+  },
+      //default setting of excheck
+  _setting = {
+    check: {
+      enable: false,
+      autoCheckTrigger: false,
+      chkStyle: _consts.checkbox.STYLE,
+      nocheckInherit: false,
+      chkDisabledInherit: false,
+      radioType: _consts.radio.TYPE_LEVEL,
+      chkboxType: {
+        "Y": "ps",
+        "N": "ps"
       }
-
-      strCopy = String(str).slice(re.lastIndex);
-      // Support anchored sticky behavior.
-      if (re.lastIndex > 0 && (!re.multiline || re.multiline && str[re.lastIndex - 1] !== '\n')) {
-        source = '(?: ' + source + ')';
-        strCopy = ' ' + strCopy;
-        charsAdded++;
+    },
+    data: {
+      key: {
+        checked: "checked"
       }
-      // ^(? + rx + ) is needed, in combination with some str slicing, to
-      // simulate the 'y' flag.
-      reCopy = new RegExp('^(?:' + source + ')', flags);
+    },
+    callback: {
+      beforeCheck: null,
+      onCheck: null
     }
-
-    if (NPCG_INCLUDED) {
-      reCopy = new RegExp('^' + source + '$(?!\\s)', flags);
-    }
-    if (UPDATES_LAST_INDEX_WRONG) lastIndex = re.lastIndex;
-
-    match = nativeExec.call(sticky ? reCopy : re, strCopy);
-
-    if (sticky) {
-      if (match) {
-        match.input = match.input.slice(charsAdded);
-        match[0] = match[0].slice(charsAdded);
-        match.index = re.lastIndex;
-        re.lastIndex += match[0].length;
-      } else re.lastIndex = 0;
-    } else if (UPDATES_LAST_INDEX_WRONG && match) {
-      re.lastIndex = re.global ? match.index + match[0].length : lastIndex;
-    }
-    if (NPCG_INCLUDED && match && match.length > 1) {
-      // Fix browsers whose `exec` methods don't consistently return `undefined`
-      // for NPCG, like IE8. NOTE: This doesn' work for /(.?)?/
-      nativeReplace.call(match[0], reCopy, function () {
-        for (i = 1; i < arguments.length - 2; i++) {
-          if (arguments[i] === undefined) match[i] = undefined;
-        }
-      });
-    }
-
-    return match;
-  };
-}
-
-module.exports = patchedExec;
-
-
-/***/ }),
-
-/***/ "94ca":
-/***/ (function(module, exports, __webpack_require__) {
-
-var fails = __webpack_require__("d039");
-
-var replacement = /#|\.prototype\./;
-
-var isForced = function (feature, detection) {
-  var value = data[normalize(feature)];
-  return value == POLYFILL ? true
-    : value == NATIVE ? false
-    : typeof detection == 'function' ? fails(detection)
-    : !!detection;
-};
-
-var normalize = isForced.normalize = function (string) {
-  return String(string).replace(replacement, '.').toLowerCase();
-};
-
-var data = isForced.data = {};
-var NATIVE = isForced.NATIVE = 'N';
-var POLYFILL = isForced.POLYFILL = 'P';
-
-module.exports = isForced;
-
-
-/***/ }),
-
-/***/ "99af":
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-var $ = __webpack_require__("23e7");
-var fails = __webpack_require__("d039");
-var isArray = __webpack_require__("e8b5");
-var isObject = __webpack_require__("861d");
-var toObject = __webpack_require__("7b0b");
-var toLength = __webpack_require__("50c4");
-var createProperty = __webpack_require__("8418");
-var arraySpeciesCreate = __webpack_require__("65f0");
-var arrayMethodHasSpeciesSupport = __webpack_require__("1dde");
-var wellKnownSymbol = __webpack_require__("b622");
-var V8_VERSION = __webpack_require__("2d00");
-
-var IS_CONCAT_SPREADABLE = wellKnownSymbol('isConcatSpreadable');
-var MAX_SAFE_INTEGER = 0x1FFFFFFFFFFFFF;
-var MAXIMUM_ALLOWED_INDEX_EXCEEDED = 'Maximum allowed index exceeded';
-
-// We can't use this feature detection in V8 since it causes
-// deoptimization and serious performance degradation
-// https://github.com/zloirock/core-js/issues/679
-var IS_CONCAT_SPREADABLE_SUPPORT = V8_VERSION >= 51 || !fails(function () {
-  var array = [];
-  array[IS_CONCAT_SPREADABLE] = false;
-  return array.concat()[0] !== array;
-});
-
-var SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('concat');
-
-var isConcatSpreadable = function (O) {
-  if (!isObject(O)) return false;
-  var spreadable = O[IS_CONCAT_SPREADABLE];
-  return spreadable !== undefined ? !!spreadable : isArray(O);
-};
-
-var FORCED = !IS_CONCAT_SPREADABLE_SUPPORT || !SPECIES_SUPPORT;
-
-// `Array.prototype.concat` method
-// https://tc39.github.io/ecma262/#sec-array.prototype.concat
-// with adding support of @@isConcatSpreadable and @@species
-$({ target: 'Array', proto: true, forced: FORCED }, {
-  concat: function concat(arg) { // eslint-disable-line no-unused-vars
-    var O = toObject(this);
-    var A = arraySpeciesCreate(O, 0);
-    var n = 0;
-    var i, k, length, len, E;
-    for (i = -1, length = arguments.length; i < length; i++) {
-      E = i === -1 ? O : arguments[i];
-      if (isConcatSpreadable(E)) {
-        len = toLength(E.length);
-        if (n + len > MAX_SAFE_INTEGER) throw TypeError(MAXIMUM_ALLOWED_INDEX_EXCEEDED);
-        for (k = 0; k < len; k++, n++) if (k in E) createProperty(A, n, E[k]);
-      } else {
-        if (n >= MAX_SAFE_INTEGER) throw TypeError(MAXIMUM_ALLOWED_INDEX_EXCEEDED);
-        createProperty(A, n++, E);
-      }
-    }
-    A.length = n;
-    return A;
-  }
-});
-
-
-/***/ }),
-
-/***/ "9bdd":
-/***/ (function(module, exports, __webpack_require__) {
-
-var anObject = __webpack_require__("825a");
-
-// call something on iterator step with safe closing on error
-module.exports = function (iterator, fn, value, ENTRIES) {
-  try {
-    return ENTRIES ? fn(anObject(value)[0], value[1]) : fn(value);
-  // 7.4.6 IteratorClose(iterator, completion)
-  } catch (error) {
-    var returnMethod = iterator['return'];
-    if (returnMethod !== undefined) anObject(returnMethod.call(iterator));
-    throw error;
-  }
-};
-
-
-/***/ }),
-
-/***/ "9bf2":
-/***/ (function(module, exports, __webpack_require__) {
-
-var DESCRIPTORS = __webpack_require__("83ab");
-var IE8_DOM_DEFINE = __webpack_require__("0cfb");
-var anObject = __webpack_require__("825a");
-var toPrimitive = __webpack_require__("c04e");
-
-var nativeDefineProperty = Object.defineProperty;
-
-// `Object.defineProperty` method
-// https://tc39.github.io/ecma262/#sec-object.defineproperty
-exports.f = DESCRIPTORS ? nativeDefineProperty : function defineProperty(O, P, Attributes) {
-  anObject(O);
-  P = toPrimitive(P, true);
-  anObject(Attributes);
-  if (IE8_DOM_DEFINE) try {
-    return nativeDefineProperty(O, P, Attributes);
-  } catch (error) { /* empty */ }
-  if ('get' in Attributes || 'set' in Attributes) throw TypeError('Accessors not supported');
-  if ('value' in Attributes) O[P] = Attributes.value;
-  return O;
-};
-
-
-/***/ }),
-
-/***/ "9ed3":
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-var IteratorPrototype = __webpack_require__("ae93").IteratorPrototype;
-var create = __webpack_require__("7c73");
-var createPropertyDescriptor = __webpack_require__("5c6c");
-var setToStringTag = __webpack_require__("d44e");
-var Iterators = __webpack_require__("3f8c");
-
-var returnThis = function () { return this; };
-
-module.exports = function (IteratorConstructor, NAME, next) {
-  var TO_STRING_TAG = NAME + ' Iterator';
-  IteratorConstructor.prototype = create(IteratorPrototype, { next: createPropertyDescriptor(1, next) });
-  setToStringTag(IteratorConstructor, TO_STRING_TAG, false, true);
-  Iterators[TO_STRING_TAG] = returnThis;
-  return IteratorConstructor;
-};
-
-
-/***/ }),
-
-/***/ "9f7f":
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-
-var fails = __webpack_require__("d039");
-
-// babel-minify transpiles RegExp('a', 'y') -> /a/y and it causes SyntaxError,
-// so we use an intermediate function.
-function RE(s, f) {
-  return RegExp(s, f);
-}
-
-exports.UNSUPPORTED_Y = fails(function () {
-  // babel-minify transpiles RegExp('a', 'y') -> /a/y and it causes SyntaxError
-  var re = RE('a', 'y');
-  re.lastIndex = 2;
-  return re.exec('abcd') != null;
-});
-
-exports.BROKEN_CARET = fails(function () {
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=773687
-  var re = RE('^r', 'gy');
-  re.lastIndex = 2;
-  return re.exec('str') != null;
-});
-
-
-/***/ }),
-
-/***/ "a15b":
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-var $ = __webpack_require__("23e7");
-var IndexedObject = __webpack_require__("44ad");
-var toIndexedObject = __webpack_require__("fc6a");
-var arrayMethodIsStrict = __webpack_require__("a640");
-
-var nativeJoin = [].join;
-
-var ES3_STRINGS = IndexedObject != Object;
-var STRICT_METHOD = arrayMethodIsStrict('join', ',');
-
-// `Array.prototype.join` method
-// https://tc39.github.io/ecma262/#sec-array.prototype.join
-$({ target: 'Array', proto: true, forced: ES3_STRINGS || !STRICT_METHOD }, {
-  join: function join(separator) {
-    return nativeJoin.call(toIndexedObject(this), separator === undefined ? ',' : separator);
-  }
-});
-
-
-/***/ }),
-
-/***/ "a434":
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-var $ = __webpack_require__("23e7");
-var toAbsoluteIndex = __webpack_require__("23cb");
-var toInteger = __webpack_require__("a691");
-var toLength = __webpack_require__("50c4");
-var toObject = __webpack_require__("7b0b");
-var arraySpeciesCreate = __webpack_require__("65f0");
-var createProperty = __webpack_require__("8418");
-var arrayMethodHasSpeciesSupport = __webpack_require__("1dde");
-var arrayMethodUsesToLength = __webpack_require__("ae40");
-
-var HAS_SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('splice');
-var USES_TO_LENGTH = arrayMethodUsesToLength('splice', { ACCESSORS: true, 0: 0, 1: 2 });
-
-var max = Math.max;
-var min = Math.min;
-var MAX_SAFE_INTEGER = 0x1FFFFFFFFFFFFF;
-var MAXIMUM_ALLOWED_LENGTH_EXCEEDED = 'Maximum allowed length exceeded';
-
-// `Array.prototype.splice` method
-// https://tc39.github.io/ecma262/#sec-array.prototype.splice
-// with adding support of @@species
-$({ target: 'Array', proto: true, forced: !HAS_SPECIES_SUPPORT || !USES_TO_LENGTH }, {
-  splice: function splice(start, deleteCount /* , ...items */) {
-    var O = toObject(this);
-    var len = toLength(O.length);
-    var actualStart = toAbsoluteIndex(start, len);
-    var argumentsLength = arguments.length;
-    var insertCount, actualDeleteCount, A, k, from, to;
-    if (argumentsLength === 0) {
-      insertCount = actualDeleteCount = 0;
-    } else if (argumentsLength === 1) {
-      insertCount = 0;
-      actualDeleteCount = len - actualStart;
-    } else {
-      insertCount = argumentsLength - 2;
-      actualDeleteCount = min(max(toInteger(deleteCount), 0), len - actualStart);
-    }
-    if (len + insertCount - actualDeleteCount > MAX_SAFE_INTEGER) {
-      throw TypeError(MAXIMUM_ALLOWED_LENGTH_EXCEEDED);
-    }
-    A = arraySpeciesCreate(O, actualDeleteCount);
-    for (k = 0; k < actualDeleteCount; k++) {
-      from = actualStart + k;
-      if (from in O) createProperty(A, k, O[from]);
-    }
-    A.length = actualDeleteCount;
-    if (insertCount < actualDeleteCount) {
-      for (k = actualStart; k < len - actualDeleteCount; k++) {
-        from = k + actualDeleteCount;
-        to = k + insertCount;
-        if (from in O) O[to] = O[from];
-        else delete O[to];
-      }
-      for (k = len; k > len - actualDeleteCount + insertCount; k--) delete O[k - 1];
-    } else if (insertCount > actualDeleteCount) {
-      for (k = len - actualDeleteCount; k > actualStart; k--) {
-        from = k + actualDeleteCount - 1;
-        to = k + insertCount - 1;
-        if (from in O) O[to] = O[from];
-        else delete O[to];
-      }
-    }
-    for (k = 0; k < insertCount; k++) {
-      O[k + actualStart] = arguments[k + 2];
-    }
-    O.length = len - actualDeleteCount + insertCount;
-    return A;
-  }
-});
-
-
-/***/ }),
-
-/***/ "a4d3":
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-var $ = __webpack_require__("23e7");
-var global = __webpack_require__("da84");
-var getBuiltIn = __webpack_require__("d066");
-var IS_PURE = __webpack_require__("c430");
-var DESCRIPTORS = __webpack_require__("83ab");
-var NATIVE_SYMBOL = __webpack_require__("4930");
-var USE_SYMBOL_AS_UID = __webpack_require__("fdbf");
-var fails = __webpack_require__("d039");
-var has = __webpack_require__("5135");
-var isArray = __webpack_require__("e8b5");
-var isObject = __webpack_require__("861d");
-var anObject = __webpack_require__("825a");
-var toObject = __webpack_require__("7b0b");
-var toIndexedObject = __webpack_require__("fc6a");
-var toPrimitive = __webpack_require__("c04e");
-var createPropertyDescriptor = __webpack_require__("5c6c");
-var nativeObjectCreate = __webpack_require__("7c73");
-var objectKeys = __webpack_require__("df75");
-var getOwnPropertyNamesModule = __webpack_require__("241c");
-var getOwnPropertyNamesExternal = __webpack_require__("057f");
-var getOwnPropertySymbolsModule = __webpack_require__("7418");
-var getOwnPropertyDescriptorModule = __webpack_require__("06cf");
-var definePropertyModule = __webpack_require__("9bf2");
-var propertyIsEnumerableModule = __webpack_require__("d1e7");
-var createNonEnumerableProperty = __webpack_require__("9112");
-var redefine = __webpack_require__("6eeb");
-var shared = __webpack_require__("5692");
-var sharedKey = __webpack_require__("f772");
-var hiddenKeys = __webpack_require__("d012");
-var uid = __webpack_require__("90e3");
-var wellKnownSymbol = __webpack_require__("b622");
-var wrappedWellKnownSymbolModule = __webpack_require__("e538");
-var defineWellKnownSymbol = __webpack_require__("746f");
-var setToStringTag = __webpack_require__("d44e");
-var InternalStateModule = __webpack_require__("69f3");
-var $forEach = __webpack_require__("b727").forEach;
-
-var HIDDEN = sharedKey('hidden');
-var SYMBOL = 'Symbol';
-var PROTOTYPE = 'prototype';
-var TO_PRIMITIVE = wellKnownSymbol('toPrimitive');
-var setInternalState = InternalStateModule.set;
-var getInternalState = InternalStateModule.getterFor(SYMBOL);
-var ObjectPrototype = Object[PROTOTYPE];
-var $Symbol = global.Symbol;
-var $stringify = getBuiltIn('JSON', 'stringify');
-var nativeGetOwnPropertyDescriptor = getOwnPropertyDescriptorModule.f;
-var nativeDefineProperty = definePropertyModule.f;
-var nativeGetOwnPropertyNames = getOwnPropertyNamesExternal.f;
-var nativePropertyIsEnumerable = propertyIsEnumerableModule.f;
-var AllSymbols = shared('symbols');
-var ObjectPrototypeSymbols = shared('op-symbols');
-var StringToSymbolRegistry = shared('string-to-symbol-registry');
-var SymbolToStringRegistry = shared('symbol-to-string-registry');
-var WellKnownSymbolsStore = shared('wks');
-var QObject = global.QObject;
-// Don't use setters in Qt Script, https://github.com/zloirock/core-js/issues/173
-var USE_SETTER = !QObject || !QObject[PROTOTYPE] || !QObject[PROTOTYPE].findChild;
-
-// fallback for old Android, https://code.google.com/p/v8/issues/detail?id=687
-var setSymbolDescriptor = DESCRIPTORS && fails(function () {
-  return nativeObjectCreate(nativeDefineProperty({}, 'a', {
-    get: function () { return nativeDefineProperty(this, 'a', { value: 7 }).a; }
-  })).a != 7;
-}) ? function (O, P, Attributes) {
-  var ObjectPrototypeDescriptor = nativeGetOwnPropertyDescriptor(ObjectPrototype, P);
-  if (ObjectPrototypeDescriptor) delete ObjectPrototype[P];
-  nativeDefineProperty(O, P, Attributes);
-  if (ObjectPrototypeDescriptor && O !== ObjectPrototype) {
-    nativeDefineProperty(ObjectPrototype, P, ObjectPrototypeDescriptor);
-  }
-} : nativeDefineProperty;
-
-var wrap = function (tag, description) {
-  var symbol = AllSymbols[tag] = nativeObjectCreate($Symbol[PROTOTYPE]);
-  setInternalState(symbol, {
-    type: SYMBOL,
-    tag: tag,
-    description: description
-  });
-  if (!DESCRIPTORS) symbol.description = description;
-  return symbol;
-};
-
-var isSymbol = USE_SYMBOL_AS_UID ? function (it) {
-  return typeof it == 'symbol';
-} : function (it) {
-  return Object(it) instanceof $Symbol;
-};
-
-var $defineProperty = function defineProperty(O, P, Attributes) {
-  if (O === ObjectPrototype) $defineProperty(ObjectPrototypeSymbols, P, Attributes);
-  anObject(O);
-  var key = toPrimitive(P, true);
-  anObject(Attributes);
-  if (has(AllSymbols, key)) {
-    if (!Attributes.enumerable) {
-      if (!has(O, HIDDEN)) nativeDefineProperty(O, HIDDEN, createPropertyDescriptor(1, {}));
-      O[HIDDEN][key] = true;
-    } else {
-      if (has(O, HIDDEN) && O[HIDDEN][key]) O[HIDDEN][key] = false;
-      Attributes = nativeObjectCreate(Attributes, { enumerable: createPropertyDescriptor(0, false) });
-    } return setSymbolDescriptor(O, key, Attributes);
-  } return nativeDefineProperty(O, key, Attributes);
-};
-
-var $defineProperties = function defineProperties(O, Properties) {
-  anObject(O);
-  var properties = toIndexedObject(Properties);
-  var keys = objectKeys(properties).concat($getOwnPropertySymbols(properties));
-  $forEach(keys, function (key) {
-    if (!DESCRIPTORS || $propertyIsEnumerable.call(properties, key)) $defineProperty(O, key, properties[key]);
-  });
-  return O;
-};
-
-var $create = function create(O, Properties) {
-  return Properties === undefined ? nativeObjectCreate(O) : $defineProperties(nativeObjectCreate(O), Properties);
-};
-
-var $propertyIsEnumerable = function propertyIsEnumerable(V) {
-  var P = toPrimitive(V, true);
-  var enumerable = nativePropertyIsEnumerable.call(this, P);
-  if (this === ObjectPrototype && has(AllSymbols, P) && !has(ObjectPrototypeSymbols, P)) return false;
-  return enumerable || !has(this, P) || !has(AllSymbols, P) || has(this, HIDDEN) && this[HIDDEN][P] ? enumerable : true;
-};
-
-var $getOwnPropertyDescriptor = function getOwnPropertyDescriptor(O, P) {
-  var it = toIndexedObject(O);
-  var key = toPrimitive(P, true);
-  if (it === ObjectPrototype && has(AllSymbols, key) && !has(ObjectPrototypeSymbols, key)) return;
-  var descriptor = nativeGetOwnPropertyDescriptor(it, key);
-  if (descriptor && has(AllSymbols, key) && !(has(it, HIDDEN) && it[HIDDEN][key])) {
-    descriptor.enumerable = true;
-  }
-  return descriptor;
-};
-
-var $getOwnPropertyNames = function getOwnPropertyNames(O) {
-  var names = nativeGetOwnPropertyNames(toIndexedObject(O));
-  var result = [];
-  $forEach(names, function (key) {
-    if (!has(AllSymbols, key) && !has(hiddenKeys, key)) result.push(key);
-  });
-  return result;
-};
-
-var $getOwnPropertySymbols = function getOwnPropertySymbols(O) {
-  var IS_OBJECT_PROTOTYPE = O === ObjectPrototype;
-  var names = nativeGetOwnPropertyNames(IS_OBJECT_PROTOTYPE ? ObjectPrototypeSymbols : toIndexedObject(O));
-  var result = [];
-  $forEach(names, function (key) {
-    if (has(AllSymbols, key) && (!IS_OBJECT_PROTOTYPE || has(ObjectPrototype, key))) {
-      result.push(AllSymbols[key]);
-    }
-  });
-  return result;
-};
-
-// `Symbol` constructor
-// https://tc39.github.io/ecma262/#sec-symbol-constructor
-if (!NATIVE_SYMBOL) {
-  $Symbol = function Symbol() {
-    if (this instanceof $Symbol) throw TypeError('Symbol is not a constructor');
-    var description = !arguments.length || arguments[0] === undefined ? undefined : String(arguments[0]);
-    var tag = uid(description);
-    var setter = function (value) {
-      if (this === ObjectPrototype) setter.call(ObjectPrototypeSymbols, value);
-      if (has(this, HIDDEN) && has(this[HIDDEN], tag)) this[HIDDEN][tag] = false;
-      setSymbolDescriptor(this, tag, createPropertyDescriptor(1, value));
-    };
-    if (DESCRIPTORS && USE_SETTER) setSymbolDescriptor(ObjectPrototype, tag, { configurable: true, set: setter });
-    return wrap(tag, description);
-  };
-
-  redefine($Symbol[PROTOTYPE], 'toString', function toString() {
-    return getInternalState(this).tag;
-  });
-
-  redefine($Symbol, 'withoutSetter', function (description) {
-    return wrap(uid(description), description);
-  });
-
-  propertyIsEnumerableModule.f = $propertyIsEnumerable;
-  definePropertyModule.f = $defineProperty;
-  getOwnPropertyDescriptorModule.f = $getOwnPropertyDescriptor;
-  getOwnPropertyNamesModule.f = getOwnPropertyNamesExternal.f = $getOwnPropertyNames;
-  getOwnPropertySymbolsModule.f = $getOwnPropertySymbols;
-
-  wrappedWellKnownSymbolModule.f = function (name) {
-    return wrap(wellKnownSymbol(name), name);
-  };
-
-  if (DESCRIPTORS) {
-    // https://github.com/tc39/proposal-Symbol-description
-    nativeDefineProperty($Symbol[PROTOTYPE], 'description', {
-      configurable: true,
-      get: function description() {
-        return getInternalState(this).description;
-      }
+  },
+      //default root of excheck
+  _initRoot = function _initRoot(setting) {
+    var r = data.getRoot(setting);
+    r.radioCheckedList = [];
+  },
+      //default cache of excheck
+  _initCache = function _initCache(treeId) {},
+      //default bind event of excheck
+  _bindEvent = function _bindEvent(setting) {
+    var o = setting.treeObj,
+        c = consts.event;
+    o.bind(c.CHECK, function (event, srcEvent, treeId, node) {
+      event.srcEvent = srcEvent;
+      tools.apply(setting.callback.onCheck, [event, treeId, node]);
     });
-    if (!IS_PURE) {
-      redefine(ObjectPrototype, 'propertyIsEnumerable', $propertyIsEnumerable, { unsafe: true });
+  },
+      _unbindEvent = function _unbindEvent(setting) {
+    var o = setting.treeObj,
+        c = consts.event;
+    o.unbind(c.CHECK);
+  },
+      //default event proxy of excheck
+  _eventProxy = function _eventProxy(e) {
+    var target = e.target,
+        setting = data.getSetting(e.data.treeId),
+        tId = "",
+        node = null,
+        nodeEventType = "",
+        treeEventType = "",
+        nodeEventCallback = null,
+        treeEventCallback = null;
+
+    if (tools.eqs(e.type, "mouseover")) {
+      if (setting.check.enable && tools.eqs(target.tagName, "span") && target.getAttribute("treeNode" + consts.id.CHECK) !== null) {
+        tId = tools.getNodeMainDom(target).id;
+        nodeEventType = "mouseoverCheck";
+      }
+    } else if (tools.eqs(e.type, "mouseout")) {
+      if (setting.check.enable && tools.eqs(target.tagName, "span") && target.getAttribute("treeNode" + consts.id.CHECK) !== null) {
+        tId = tools.getNodeMainDom(target).id;
+        nodeEventType = "mouseoutCheck";
+      }
+    } else if (tools.eqs(e.type, "click")) {
+      if (setting.check.enable && tools.eqs(target.tagName, "span") && target.getAttribute("treeNode" + consts.id.CHECK) !== null) {
+        tId = tools.getNodeMainDom(target).id;
+        nodeEventType = "checkNode";
+      }
     }
-  }
-}
 
-$({ global: true, wrap: true, forced: !NATIVE_SYMBOL, sham: !NATIVE_SYMBOL }, {
-  Symbol: $Symbol
-});
+    if (tId.length > 0) {
+      node = data.getNodeCache(setting, tId);
 
-$forEach(objectKeys(WellKnownSymbolsStore), function (name) {
-  defineWellKnownSymbol(name);
-});
+      switch (nodeEventType) {
+        case "checkNode":
+          nodeEventCallback = _handler.onCheckNode;
+          break;
 
-$({ target: SYMBOL, stat: true, forced: !NATIVE_SYMBOL }, {
-  // `Symbol.for` method
-  // https://tc39.github.io/ecma262/#sec-symbol.for
-  'for': function (key) {
-    var string = String(key);
-    if (has(StringToSymbolRegistry, string)) return StringToSymbolRegistry[string];
-    var symbol = $Symbol(string);
-    StringToSymbolRegistry[string] = symbol;
-    SymbolToStringRegistry[symbol] = string;
-    return symbol;
+        case "mouseoverCheck":
+          nodeEventCallback = _handler.onMouseoverCheck;
+          break;
+
+        case "mouseoutCheck":
+          nodeEventCallback = _handler.onMouseoutCheck;
+          break;
+      }
+    }
+
+    var proxyResult = {
+      stop: nodeEventType === "checkNode",
+      node: node,
+      nodeEventType: nodeEventType,
+      nodeEventCallback: nodeEventCallback,
+      treeEventType: treeEventType,
+      treeEventCallback: treeEventCallback
+    };
+    return proxyResult;
   },
-  // `Symbol.keyFor` method
-  // https://tc39.github.io/ecma262/#sec-symbol.keyfor
-  keyFor: function keyFor(sym) {
-    if (!isSymbol(sym)) throw TypeError(sym + ' is not a symbol');
-    if (has(SymbolToStringRegistry, sym)) return SymbolToStringRegistry[sym];
+      //default init node of excheck
+  _initNode = function _initNode(setting, level, n, parentNode, isFirstNode, isLastNode, openFlag) {
+    if (!n) return;
+    var checked = data.nodeChecked(setting, n);
+    n.checkedOld = checked;
+    if (typeof n.nocheck == "string") n.nocheck = tools.eqs(n.nocheck, "true");
+    n.nocheck = !!n.nocheck || setting.check.nocheckInherit && parentNode && !!parentNode.nocheck;
+    if (typeof n.chkDisabled == "string") n.chkDisabled = tools.eqs(n.chkDisabled, "true");
+    n.chkDisabled = !!n.chkDisabled || setting.check.chkDisabledInherit && parentNode && !!parentNode.chkDisabled;
+    if (typeof n.halfCheck == "string") n.halfCheck = tools.eqs(n.halfCheck, "true");
+    n.halfCheck = !!n.halfCheck;
+    n.check_Child_State = -1;
+    n.check_Focus = false;
+
+    n.getCheckStatus = function () {
+      return data.getCheckStatus(setting, n);
+    };
+
+    if (setting.check.chkStyle == consts.radio.STYLE && setting.check.radioType == consts.radio.TYPE_ALL && checked) {
+      var r = data.getRoot(setting);
+      r.radioCheckedList.push(n);
+    }
   },
-  useSetter: function () { USE_SETTER = true; },
-  useSimple: function () { USE_SETTER = false; }
-});
+      //add dom for check
+  _beforeA = function _beforeA(setting, node, html) {
+    if (setting.check.enable) {
+      data.makeChkFlag(setting, node);
+      html.push("<span ID='", node.tId, consts.id.CHECK, "' class='", view.makeChkClass(setting, node), "' treeNode", consts.id.CHECK, node.nocheck === true ? " style='display:none;'" : "", "></span>");
+    }
+  },
+      //update zTreeObj, add method of check
+  _zTreeTools = function _zTreeTools(setting, zTreeTools) {
+    zTreeTools.checkNode = function (node, checked, checkTypeFlag, callbackFlag) {
+      var nodeChecked = data.nodeChecked(setting, node);
+      if (node.chkDisabled === true) return;
 
-$({ target: 'Object', stat: true, forced: !NATIVE_SYMBOL, sham: !DESCRIPTORS }, {
-  // `Object.create` method
-  // https://tc39.github.io/ecma262/#sec-object.create
-  create: $create,
-  // `Object.defineProperty` method
-  // https://tc39.github.io/ecma262/#sec-object.defineproperty
-  defineProperty: $defineProperty,
-  // `Object.defineProperties` method
-  // https://tc39.github.io/ecma262/#sec-object.defineproperties
-  defineProperties: $defineProperties,
-  // `Object.getOwnPropertyDescriptor` method
-  // https://tc39.github.io/ecma262/#sec-object.getownpropertydescriptors
-  getOwnPropertyDescriptor: $getOwnPropertyDescriptor
-});
+      if (checked !== true && checked !== false) {
+        checked = !nodeChecked;
+      }
 
-$({ target: 'Object', stat: true, forced: !NATIVE_SYMBOL }, {
-  // `Object.getOwnPropertyNames` method
-  // https://tc39.github.io/ecma262/#sec-object.getownpropertynames
-  getOwnPropertyNames: $getOwnPropertyNames,
-  // `Object.getOwnPropertySymbols` method
-  // https://tc39.github.io/ecma262/#sec-object.getownpropertysymbols
-  getOwnPropertySymbols: $getOwnPropertySymbols
-});
+      callbackFlag = !!callbackFlag;
 
-// Chrome 38 and 39 `Object.getOwnPropertySymbols` fails on primitives
-// https://bugs.chromium.org/p/v8/issues/detail?id=3443
-$({ target: 'Object', stat: true, forced: fails(function () { getOwnPropertySymbolsModule.f(1); }) }, {
-  getOwnPropertySymbols: function getOwnPropertySymbols(it) {
-    return getOwnPropertySymbolsModule.f(toObject(it));
-  }
-});
+      if (nodeChecked === checked && !checkTypeFlag) {
+        return;
+      } else if (callbackFlag && tools.apply(this.setting.callback.beforeCheck, [this.setting.treeId, node], true) == false) {
+        return;
+      }
 
-// `JSON.stringify` method behavior with symbols
-// https://tc39.github.io/ecma262/#sec-json.stringify
-if ($stringify) {
-  var FORCED_JSON_STRINGIFY = !NATIVE_SYMBOL || fails(function () {
-    var symbol = $Symbol();
-    // MS Edge converts symbol values to JSON as {}
-    return $stringify([symbol]) != '[null]'
-      // WebKit converts symbol values to JSON as null
-      || $stringify({ a: symbol }) != '{}'
-      // V8 throws on boxed symbols
-      || $stringify(Object(symbol)) != '{}';
-  });
+      if (tools.uCanDo(this.setting) && this.setting.check.enable && node.nocheck !== true) {
+        data.nodeChecked(setting, node, checked);
+        var checkObj = $$(node, consts.id.CHECK, this.setting);
+        if (checkTypeFlag || this.setting.check.chkStyle === consts.radio.STYLE) view.checkNodeRelation(this.setting, node);
+        view.setChkClass(this.setting, checkObj, node);
+        view.repairParentChkClassWithSelf(this.setting, node);
 
-  $({ target: 'JSON', stat: true, forced: FORCED_JSON_STRINGIFY }, {
-    // eslint-disable-next-line no-unused-vars
-    stringify: function stringify(it, replacer, space) {
-      var args = [it];
-      var index = 1;
-      var $replacer;
-      while (arguments.length > index) args.push(arguments[index++]);
-      $replacer = replacer;
-      if (!isObject(replacer) && it === undefined || isSymbol(it)) return; // IE8 returns string on undefined
-      if (!isArray(replacer)) replacer = function (key, value) {
-        if (typeof $replacer == 'function') value = $replacer.call(this, key, value);
-        if (!isSymbol(value)) return value;
+        if (callbackFlag) {
+          this.setting.treeObj.trigger(consts.event.CHECK, [null, this.setting.treeId, node]);
+        }
+      }
+    };
+
+    zTreeTools.checkAllNodes = function (checked) {
+      view.repairAllChk(this.setting, !!checked);
+    };
+
+    zTreeTools.getCheckedNodes = function (checked) {
+      checked = checked !== false;
+      var children = data.nodeChildren(setting, data.getRoot(this.setting));
+      return data.getTreeCheckedNodes(this.setting, children, checked);
+    };
+
+    zTreeTools.getChangeCheckedNodes = function () {
+      var children = data.nodeChildren(setting, data.getRoot(this.setting));
+      return data.getTreeChangeCheckedNodes(this.setting, children);
+    };
+
+    zTreeTools.setChkDisabled = function (node, disabled, inheritParent, inheritChildren) {
+      disabled = !!disabled;
+      inheritParent = !!inheritParent;
+      inheritChildren = !!inheritChildren;
+      view.repairSonChkDisabled(this.setting, node, disabled, inheritChildren);
+      view.repairParentChkDisabled(this.setting, node.getParentNode(), disabled, inheritParent);
+    };
+
+    var _updateNode = zTreeTools.updateNode;
+
+    zTreeTools.updateNode = function (node, checkTypeFlag) {
+      if (_updateNode) _updateNode.apply(zTreeTools, arguments);
+      if (!node || !this.setting.check.enable) return;
+      var nObj = $$(node, this.setting);
+
+      if (nObj.get(0) && tools.uCanDo(this.setting)) {
+        var checkObj = $$(node, consts.id.CHECK, this.setting);
+        if (checkTypeFlag == true || this.setting.check.chkStyle === consts.radio.STYLE) view.checkNodeRelation(this.setting, node);
+        view.setChkClass(this.setting, checkObj, node);
+        view.repairParentChkClassWithSelf(this.setting, node);
+      }
+    };
+  },
+      //method of operate data
+  _data = {
+    getRadioCheckedList: function getRadioCheckedList(setting) {
+      var checkedList = data.getRoot(setting).radioCheckedList;
+
+      for (var i = 0, j = checkedList.length; i < j; i++) {
+        if (!data.getNodeCache(setting, checkedList[i].tId)) {
+          checkedList.splice(i, 1);
+          i--;
+          j--;
+        }
+      }
+
+      return checkedList;
+    },
+    getCheckStatus: function getCheckStatus(setting, node) {
+      if (!setting.check.enable || node.nocheck || node.chkDisabled) return null;
+      var checked = data.nodeChecked(setting, node),
+          r = {
+        checked: checked,
+        half: node.halfCheck ? node.halfCheck : setting.check.chkStyle == consts.radio.STYLE ? node.check_Child_State === 2 : checked ? node.check_Child_State > -1 && node.check_Child_State < 2 : node.check_Child_State > 0
       };
-      args[1] = replacer;
-      return $stringify.apply(null, args);
+      return r;
+    },
+    getTreeCheckedNodes: function getTreeCheckedNodes(setting, nodes, checked, results) {
+      if (!nodes) return [];
+      var onlyOne = checked && setting.check.chkStyle == consts.radio.STYLE && setting.check.radioType == consts.radio.TYPE_ALL;
+      results = !results ? [] : results;
+
+      for (var i = 0, l = nodes.length; i < l; i++) {
+        var node = nodes[i];
+        var children = data.nodeChildren(setting, node);
+        var nodeChecked = data.nodeChecked(setting, node);
+
+        if (node.nocheck !== true && node.chkDisabled !== true && nodeChecked == checked) {
+          results.push(node);
+
+          if (onlyOne) {
+            break;
+          }
+        }
+
+        data.getTreeCheckedNodes(setting, children, checked, results);
+
+        if (onlyOne && results.length > 0) {
+          break;
+        }
+      }
+
+      return results;
+    },
+    getTreeChangeCheckedNodes: function getTreeChangeCheckedNodes(setting, nodes, results) {
+      if (!nodes) return [];
+      results = !results ? [] : results;
+
+      for (var i = 0, l = nodes.length; i < l; i++) {
+        var node = nodes[i];
+        var children = data.nodeChildren(setting, node);
+        var nodeChecked = data.nodeChecked(setting, node);
+
+        if (node.nocheck !== true && node.chkDisabled !== true && nodeChecked != node.checkedOld) {
+          results.push(node);
+        }
+
+        data.getTreeChangeCheckedNodes(setting, children, results);
+      }
+
+      return results;
+    },
+    makeChkFlag: function makeChkFlag(setting, node) {
+      if (!node) return;
+      var chkFlag = -1;
+      var children = data.nodeChildren(setting, node);
+
+      if (children) {
+        for (var i = 0, l = children.length; i < l; i++) {
+          var cNode = children[i];
+          var nodeChecked = data.nodeChecked(setting, cNode);
+          var tmp = -1;
+
+          if (setting.check.chkStyle == consts.radio.STYLE) {
+            if (cNode.nocheck === true || cNode.chkDisabled === true) {
+              tmp = cNode.check_Child_State;
+            } else if (cNode.halfCheck === true) {
+              tmp = 2;
+            } else if (nodeChecked) {
+              tmp = 2;
+            } else {
+              tmp = cNode.check_Child_State > 0 ? 2 : 0;
+            }
+
+            if (tmp == 2) {
+              chkFlag = 2;
+              break;
+            } else if (tmp == 0) {
+              chkFlag = 0;
+            }
+          } else if (setting.check.chkStyle == consts.checkbox.STYLE) {
+            if (cNode.nocheck === true || cNode.chkDisabled === true) {
+              tmp = cNode.check_Child_State;
+            } else if (cNode.halfCheck === true) {
+              tmp = 1;
+            } else if (nodeChecked) {
+              tmp = cNode.check_Child_State === -1 || cNode.check_Child_State === 2 ? 2 : 1;
+            } else {
+              tmp = cNode.check_Child_State > 0 ? 1 : 0;
+            }
+
+            if (tmp === 1) {
+              chkFlag = 1;
+              break;
+            } else if (tmp === 2 && chkFlag > -1 && i > 0 && tmp !== chkFlag) {
+              chkFlag = 1;
+              break;
+            } else if (chkFlag === 2 && tmp > -1 && tmp < 2) {
+              chkFlag = 1;
+              break;
+            } else if (tmp > -1) {
+              chkFlag = tmp;
+            }
+          }
+        }
+      }
+
+      node.check_Child_State = chkFlag;
     }
-  });
-}
+  },
+      //method of event proxy
+  _event = {},
+      //method of event handler
+  _handler = {
+    onCheckNode: function onCheckNode(event, node) {
+      if (node.chkDisabled === true) return false;
+      var setting = data.getSetting(event.data.treeId);
+      if (tools.apply(setting.callback.beforeCheck, [setting.treeId, node], true) == false) return true;
+      var nodeChecked = data.nodeChecked(setting, node);
+      data.nodeChecked(setting, node, !nodeChecked);
+      view.checkNodeRelation(setting, node);
+      var checkObj = $$(node, consts.id.CHECK, setting);
+      view.setChkClass(setting, checkObj, node);
+      view.repairParentChkClassWithSelf(setting, node);
+      setting.treeObj.trigger(consts.event.CHECK, [event, setting.treeId, node]);
+      return true;
+    },
+    onMouseoverCheck: function onMouseoverCheck(event, node) {
+      if (node.chkDisabled === true) return false;
+      var setting = data.getSetting(event.data.treeId),
+          checkObj = $$(node, consts.id.CHECK, setting);
+      node.check_Focus = true;
+      view.setChkClass(setting, checkObj, node);
+      return true;
+    },
+    onMouseoutCheck: function onMouseoutCheck(event, node) {
+      if (node.chkDisabled === true) return false;
+      var setting = data.getSetting(event.data.treeId),
+          checkObj = $$(node, consts.id.CHECK, setting);
+      node.check_Focus = false;
+      view.setChkClass(setting, checkObj, node);
+      return true;
+    }
+  },
+      //method of tools for zTree
+  _tools = {},
+      //method of operate ztree dom
+  _view = {
+    checkNodeRelation: function checkNodeRelation(setting, node) {
+      var pNode,
+          i,
+          l,
+          r = consts.radio;
+      var nodeChecked = data.nodeChecked(setting, node);
 
-// `Symbol.prototype[@@toPrimitive]` method
-// https://tc39.github.io/ecma262/#sec-symbol.prototype-@@toprimitive
-if (!$Symbol[PROTOTYPE][TO_PRIMITIVE]) {
-  createNonEnumerableProperty($Symbol[PROTOTYPE], TO_PRIMITIVE, $Symbol[PROTOTYPE].valueOf);
-}
-// `Symbol.prototype[@@toStringTag]` property
-// https://tc39.github.io/ecma262/#sec-symbol.prototype-@@tostringtag
-setToStringTag($Symbol, SYMBOL);
+      if (setting.check.chkStyle == r.STYLE) {
+        var checkedList = data.getRadioCheckedList(setting);
 
-hiddenKeys[HIDDEN] = true;
+        if (nodeChecked) {
+          if (setting.check.radioType == r.TYPE_ALL) {
+            for (i = checkedList.length - 1; i >= 0; i--) {
+              pNode = checkedList[i];
+              var pNodeChecked = data.nodeChecked(setting, pNode);
+
+              if (pNodeChecked && pNode != node) {
+                data.nodeChecked(setting, pNode, false);
+                checkedList.splice(i, 1);
+                view.setChkClass(setting, $$(pNode, consts.id.CHECK, setting), pNode);
+
+                if (pNode.parentTId != node.parentTId) {
+                  view.repairParentChkClassWithSelf(setting, pNode);
+                }
+              }
+            }
+
+            checkedList.push(node);
+          } else {
+            var parentNode = node.parentTId ? node.getParentNode() : data.getRoot(setting);
+            var children = data.nodeChildren(setting, parentNode);
+
+            for (i = 0, l = children.length; i < l; i++) {
+              pNode = children[i];
+              var pNodeChecked = data.nodeChecked(setting, pNode);
+
+              if (pNodeChecked && pNode != node) {
+                data.nodeChecked(setting, pNode, false);
+                view.setChkClass(setting, $$(pNode, consts.id.CHECK, setting), pNode);
+              }
+            }
+          }
+        } else if (setting.check.radioType == r.TYPE_ALL) {
+          for (i = 0, l = checkedList.length; i < l; i++) {
+            if (node == checkedList[i]) {
+              checkedList.splice(i, 1);
+              break;
+            }
+          }
+        }
+      } else {
+        var children = data.nodeChildren(setting, node);
+
+        if (nodeChecked && (!children || children.length == 0 || setting.check.chkboxType.Y.indexOf("s") > -1)) {
+          view.setSonNodeCheckBox(setting, node, true);
+        }
+
+        if (!nodeChecked && (!children || children.length == 0 || setting.check.chkboxType.N.indexOf("s") > -1)) {
+          view.setSonNodeCheckBox(setting, node, false);
+        }
+
+        if (nodeChecked && setting.check.chkboxType.Y.indexOf("p") > -1) {
+          view.setParentNodeCheckBox(setting, node, true);
+        }
+
+        if (!nodeChecked && setting.check.chkboxType.N.indexOf("p") > -1) {
+          view.setParentNodeCheckBox(setting, node, false);
+        }
+      }
+    },
+    makeChkClass: function makeChkClass(setting, node) {
+      var c = consts.checkbox,
+          r = consts.radio,
+          fullStyle = "";
+      var nodeChecked = data.nodeChecked(setting, node);
+
+      if (node.chkDisabled === true) {
+        fullStyle = c.DISABLED;
+      } else if (node.halfCheck) {
+        fullStyle = c.PART;
+      } else if (setting.check.chkStyle == r.STYLE) {
+        fullStyle = node.check_Child_State < 1 ? c.FULL : c.PART;
+      } else {
+        fullStyle = nodeChecked ? node.check_Child_State === 2 || node.check_Child_State === -1 ? c.FULL : c.PART : node.check_Child_State < 1 ? c.FULL : c.PART;
+      }
+
+      var chkName = setting.check.chkStyle + "_" + (nodeChecked ? c.TRUE : c.FALSE) + "_" + fullStyle;
+      chkName = node.check_Focus && node.chkDisabled !== true ? chkName + "_" + c.FOCUS : chkName;
+      return consts.className.BUTTON + " " + c.DEFAULT + " " + chkName;
+    },
+    repairAllChk: function repairAllChk(setting, checked) {
+      if (setting.check.enable && setting.check.chkStyle === consts.checkbox.STYLE) {
+        var root = data.getRoot(setting);
+        var children = data.nodeChildren(setting, root);
+
+        for (var i = 0, l = children.length; i < l; i++) {
+          var node = children[i];
+
+          if (node.nocheck !== true && node.chkDisabled !== true) {
+            data.nodeChecked(setting, node, checked);
+          }
+
+          view.setSonNodeCheckBox(setting, node, checked);
+        }
+      }
+    },
+    repairChkClass: function repairChkClass(setting, node) {
+      if (!node) return;
+      data.makeChkFlag(setting, node);
+
+      if (node.nocheck !== true) {
+        var checkObj = $$(node, consts.id.CHECK, setting);
+        view.setChkClass(setting, checkObj, node);
+      }
+    },
+    repairParentChkClass: function repairParentChkClass(setting, node) {
+      if (!node || !node.parentTId) return;
+      var pNode = node.getParentNode();
+      view.repairChkClass(setting, pNode);
+      view.repairParentChkClass(setting, pNode);
+    },
+    repairParentChkClassWithSelf: function repairParentChkClassWithSelf(setting, node) {
+      if (!node) return;
+      var children = data.nodeChildren(setting, node);
+
+      if (children && children.length > 0) {
+        view.repairParentChkClass(setting, children[0]);
+      } else {
+        view.repairParentChkClass(setting, node);
+      }
+    },
+    repairSonChkDisabled: function repairSonChkDisabled(setting, node, chkDisabled, inherit) {
+      if (!node) return;
+
+      if (node.chkDisabled != chkDisabled) {
+        node.chkDisabled = chkDisabled;
+      }
+
+      view.repairChkClass(setting, node);
+      var children = data.nodeChildren(setting, node);
+
+      if (children && inherit) {
+        for (var i = 0, l = children.length; i < l; i++) {
+          var sNode = children[i];
+          view.repairSonChkDisabled(setting, sNode, chkDisabled, inherit);
+        }
+      }
+    },
+    repairParentChkDisabled: function repairParentChkDisabled(setting, node, chkDisabled, inherit) {
+      if (!node) return;
+
+      if (node.chkDisabled != chkDisabled && inherit) {
+        node.chkDisabled = chkDisabled;
+      }
+
+      view.repairChkClass(setting, node);
+      view.repairParentChkDisabled(setting, node.getParentNode(), chkDisabled, inherit);
+    },
+    setChkClass: function setChkClass(setting, obj, node) {
+      if (!obj) return;
+
+      if (node.nocheck === true) {
+        obj.hide();
+      } else {
+        obj.show();
+      }
+
+      obj.attr('class', view.makeChkClass(setting, node));
+    },
+    setParentNodeCheckBox: function setParentNodeCheckBox(setting, node, value, srcNode) {
+      var checkObj = $$(node, consts.id.CHECK, setting);
+      if (!srcNode) srcNode = node;
+      data.makeChkFlag(setting, node);
+
+      if (node.nocheck !== true && node.chkDisabled !== true) {
+        data.nodeChecked(setting, node, value);
+        view.setChkClass(setting, checkObj, node);
+
+        if (setting.check.autoCheckTrigger && node != srcNode) {
+          setting.treeObj.trigger(consts.event.CHECK, [null, setting.treeId, node]);
+        }
+      }
+
+      if (node.parentTId) {
+        var pSign = true;
+
+        if (!value) {
+          var pNodes = data.nodeChildren(setting, node.getParentNode());
+
+          for (var i = 0, l = pNodes.length; i < l; i++) {
+            var pNode = pNodes[i];
+            var nodeChecked = data.nodeChecked(setting, pNode);
+
+            if (pNode.nocheck !== true && pNode.chkDisabled !== true && nodeChecked || (pNode.nocheck === true || pNode.chkDisabled === true) && pNode.check_Child_State > 0) {
+              pSign = false;
+              break;
+            }
+          }
+        }
+
+        if (pSign) {
+          view.setParentNodeCheckBox(setting, node.getParentNode(), value, srcNode);
+        }
+      }
+    },
+    setSonNodeCheckBox: function setSonNodeCheckBox(setting, node, value, srcNode) {
+      if (!node) return;
+      var checkObj = $$(node, consts.id.CHECK, setting);
+      if (!srcNode) srcNode = node;
+      var hasDisable = false;
+      var children = data.nodeChildren(setting, node);
+
+      if (children) {
+        for (var i = 0, l = children.length; i < l; i++) {
+          var sNode = children[i];
+          view.setSonNodeCheckBox(setting, sNode, value, srcNode);
+          if (sNode.chkDisabled === true) hasDisable = true;
+        }
+      }
+
+      if (node != data.getRoot(setting) && node.chkDisabled !== true) {
+        if (hasDisable && node.nocheck !== true) {
+          data.makeChkFlag(setting, node);
+        }
+
+        if (node.nocheck !== true && node.chkDisabled !== true) {
+          data.nodeChecked(setting, node, value);
+          if (!hasDisable) node.check_Child_State = children && children.length > 0 ? value ? 2 : 0 : -1;
+        } else {
+          node.check_Child_State = -1;
+        }
+
+        view.setChkClass(setting, checkObj, node);
+
+        if (setting.check.autoCheckTrigger && node != srcNode && node.nocheck !== true && node.chkDisabled !== true) {
+          setting.treeObj.trigger(consts.event.CHECK, [null, setting.treeId, node]);
+        }
+      }
+    }
+  },
+      _z = {
+    tools: _tools,
+    view: _view,
+    event: _event,
+    data: _data
+  };
+
+  $.extend(true, $.fn.zTree.consts, _consts);
+  $.extend(true, $.fn.zTree._z, _z);
+  var zt = $.fn.zTree,
+      tools = zt._z.tools,
+      consts = zt.consts,
+      view = zt._z.view,
+      data = zt._z.data,
+      event = zt._z.event,
+      $$ = tools.$;
+
+  data.nodeChecked = function (setting, node, newChecked) {
+    if (!node) {
+      return false;
+    }
+
+    var key = setting.data.key.checked;
+
+    if (typeof newChecked !== 'undefined') {
+      if (typeof newChecked === "string") {
+        newChecked = tools.eqs(newChecked, "true");
+      }
+
+      newChecked = !!newChecked;
+      node[key] = newChecked;
+    } else if (typeof node[key] == "string") {
+      node[key] = tools.eqs(node[key], "true");
+    } else {
+      node[key] = !!node[key];
+    }
+
+    return node[key];
+  };
+
+  data.exSetting(_setting);
+  data.addInitBind(_bindEvent);
+  data.addInitUnBind(_unbindEvent);
+  data.addInitCache(_initCache);
+  data.addInitNode(_initNode);
+  data.addInitProxy(_eventProxy, true);
+  data.addInitRoot(_initRoot);
+  data.addBeforeA(_beforeA);
+  data.addZTreeTools(_zTreeTools);
+  var _createNodes = view.createNodes;
+
+  view.createNodes = function (setting, level, nodes, parentNode, index) {
+    if (_createNodes) _createNodes.apply(view, arguments);
+    if (!nodes) return;
+    view.repairParentChkClassWithSelf(setting, parentNode);
+  };
+
+  var _removeNode = view.removeNode;
+
+  view.removeNode = function (setting, node) {
+    var parentNode = node.getParentNode();
+    if (_removeNode) _removeNode.apply(view, arguments);
+    if (!node || !parentNode) return;
+    view.repairChkClass(setting, parentNode);
+    view.repairParentChkClass(setting, parentNode);
+  };
+
+  var _appendNodes = view.appendNodes;
+
+  view.appendNodes = function (setting, level, nodes, parentNode, index, initFlag, openFlag) {
+    var html = "";
+
+    if (_appendNodes) {
+      html = _appendNodes.apply(view, arguments);
+    }
+
+    if (parentNode) {
+      data.makeChkFlag(setting, parentNode);
+    }
+
+    return html;
+  };
+})(jQuery__WEBPACK_IMPORTED_MODULE_14___default.a);
+/*
+ * JQuery zTree exedit
+ * v3.5.44
+ * http://treejs.cn/
+ *
+ * Copyright (c) 2010 Hunter.z
+ *
+ * Licensed same as jquery - MIT License
+ * http://www.opensource.org/licenses/mit-license.php
+ *
+ * Date: 2020-04-29
+ */
 
 
-/***/ }),
+(function ($) {
+  //default consts of exedit
+  var _consts = {
+    event: {
+      DRAG: "ztree_drag",
+      DROP: "ztree_drop",
+      RENAME: "ztree_rename",
+      DRAGMOVE: "ztree_dragmove"
+    },
+    id: {
+      EDIT: "_edit",
+      INPUT: "_input",
+      REMOVE: "_remove"
+    },
+    move: {
+      TYPE_INNER: "inner",
+      TYPE_PREV: "prev",
+      TYPE_NEXT: "next"
+    },
+    node: {
+      CURSELECTED_EDIT: "curSelectedNode_Edit",
+      TMPTARGET_TREE: "tmpTargetzTree",
+      TMPTARGET_NODE: "tmpTargetNode"
+    }
+  },
+      //default setting of exedit
+  _setting = {
+    edit: {
+      enable: false,
+      editNameSelectAll: false,
+      showRemoveBtn: true,
+      showRenameBtn: true,
+      removeTitle: "remove",
+      renameTitle: "rename",
+      drag: {
+        autoExpandTrigger: false,
+        isCopy: true,
+        isMove: true,
+        prev: true,
+        next: true,
+        inner: true,
+        minMoveSize: 5,
+        borderMax: 10,
+        borderMin: -5,
+        maxShowNodeNum: 5,
+        autoOpenTime: 500
+      }
+    },
+    view: {
+      addHoverDom: null,
+      removeHoverDom: null
+    },
+    callback: {
+      beforeDrag: null,
+      beforeDragOpen: null,
+      beforeDrop: null,
+      beforeEditName: null,
+      beforeRename: null,
+      onDrag: null,
+      onDragMove: null,
+      onDrop: null,
+      onRename: null
+    }
+  },
+      //default root of exedit
+  _initRoot = function _initRoot(setting) {
+    var r = data.getRoot(setting),
+        rs = data.getRoots();
+    r.curEditNode = null;
+    r.curEditInput = null;
+    r.curHoverNode = null;
+    r.dragFlag = 0;
+    r.dragNodeShowBefore = [];
+    r.dragMaskList = new Array();
+    rs.showHoverDom = true;
+  },
+      //default cache of exedit
+  _initCache = function _initCache(treeId) {},
+      //default bind event of exedit
+  _bindEvent = function _bindEvent(setting) {
+    var o = setting.treeObj;
+    var c = consts.event;
+    o.bind(c.RENAME, function (event, treeId, treeNode, isCancel) {
+      tools.apply(setting.callback.onRename, [event, treeId, treeNode, isCancel]);
+    });
+    o.bind(c.DRAG, function (event, srcEvent, treeId, treeNodes) {
+      tools.apply(setting.callback.onDrag, [srcEvent, treeId, treeNodes]);
+    });
+    o.bind(c.DRAGMOVE, function (event, srcEvent, treeId, treeNodes) {
+      tools.apply(setting.callback.onDragMove, [srcEvent, treeId, treeNodes]);
+    });
+    o.bind(c.DROP, function (event, srcEvent, treeId, treeNodes, targetNode, moveType, isCopy) {
+      tools.apply(setting.callback.onDrop, [srcEvent, treeId, treeNodes, targetNode, moveType, isCopy]);
+    });
+  },
+      _unbindEvent = function _unbindEvent(setting) {
+    var o = setting.treeObj;
+    var c = consts.event;
+    o.unbind(c.RENAME);
+    o.unbind(c.DRAG);
+    o.unbind(c.DRAGMOVE);
+    o.unbind(c.DROP);
+  },
+      //default event proxy of exedit
+  _eventProxy = function _eventProxy(e) {
+    var target = e.target,
+        setting = data.getSetting(e.data.treeId),
+        relatedTarget = e.relatedTarget,
+        tId = "",
+        node = null,
+        nodeEventType = "",
+        treeEventType = "",
+        nodeEventCallback = null,
+        treeEventCallback = null,
+        tmp = null;
 
-/***/ "a640":
-/***/ (function(module, exports, __webpack_require__) {
+    if (tools.eqs(e.type, "mouseover")) {
+      tmp = tools.getMDom(setting, target, [{
+        tagName: "a",
+        attrName: "treeNode" + consts.id.A
+      }]);
 
-"use strict";
+      if (tmp) {
+        tId = tools.getNodeMainDom(tmp).id;
+        nodeEventType = "hoverOverNode";
+      }
+    } else if (tools.eqs(e.type, "mouseout")) {
+      tmp = tools.getMDom(setting, relatedTarget, [{
+        tagName: "a",
+        attrName: "treeNode" + consts.id.A
+      }]);
 
-var fails = __webpack_require__("d039");
+      if (!tmp) {
+        tId = "remove";
+        nodeEventType = "hoverOutNode";
+      }
+    } else if (tools.eqs(e.type, "mousedown")) {
+      tmp = tools.getMDom(setting, target, [{
+        tagName: "a",
+        attrName: "treeNode" + consts.id.A
+      }]);
 
-module.exports = function (METHOD_NAME, argument) {
-  var method = [][METHOD_NAME];
-  return !!method && fails(function () {
-    // eslint-disable-next-line no-useless-call,no-throw-literal
-    method.call(null, argument || function () { throw 1; }, 1);
-  });
-};
+      if (tmp) {
+        tId = tools.getNodeMainDom(tmp).id;
+        nodeEventType = "mousedownNode";
+      }
+    }
+
+    if (tId.length > 0) {
+      node = data.getNodeCache(setting, tId);
+
+      switch (nodeEventType) {
+        case "mousedownNode":
+          nodeEventCallback = _handler.onMousedownNode;
+          break;
+
+        case "hoverOverNode":
+          nodeEventCallback = _handler.onHoverOverNode;
+          break;
+
+        case "hoverOutNode":
+          nodeEventCallback = _handler.onHoverOutNode;
+          break;
+      }
+    }
+
+    var proxyResult = {
+      stop: false,
+      node: node,
+      nodeEventType: nodeEventType,
+      nodeEventCallback: nodeEventCallback,
+      treeEventType: treeEventType,
+      treeEventCallback: treeEventCallback
+    };
+    return proxyResult;
+  },
+      //default init node of exedit
+  _initNode = function _initNode(setting, level, n, parentNode, isFirstNode, isLastNode, openFlag) {
+    if (!n) return;
+    n.isHover = false;
+    n.editNameFlag = false;
+  },
+      //update zTreeObj, add method of edit
+  _zTreeTools = function _zTreeTools(setting, zTreeTools) {
+    zTreeTools.cancelEditName = function (newName) {
+      var root = data.getRoot(this.setting);
+      if (!root.curEditNode) return;
+      view.cancelCurEditNode(this.setting, newName ? newName : null, true);
+    };
+
+    zTreeTools.copyNode = function (targetNode, node, moveType, isSilent) {
+      if (!node) return null;
+      var isParent = data.nodeIsParent(setting, targetNode);
+      if (targetNode && !isParent && this.setting.data.keep.leaf && moveType === consts.move.TYPE_INNER) return null;
+
+      var _this = this,
+          newNode = tools.clone(node);
+
+      if (!targetNode) {
+        targetNode = null;
+        moveType = consts.move.TYPE_INNER;
+      }
+
+      if (moveType == consts.move.TYPE_INNER) {
+        function copyCallback() {
+          view.addNodes(_this.setting, targetNode, -1, [newNode], isSilent);
+        }
+
+        if (tools.canAsync(this.setting, targetNode)) {
+          view.asyncNode(this.setting, targetNode, isSilent, copyCallback);
+        } else {
+          copyCallback();
+        }
+      } else {
+        view.addNodes(this.setting, targetNode.parentNode, -1, [newNode], isSilent);
+        view.moveNode(this.setting, targetNode, newNode, moveType, false, isSilent);
+      }
+
+      return newNode;
+    };
+
+    zTreeTools.editName = function (node) {
+      if (!node || !node.tId || node !== data.getNodeCache(this.setting, node.tId)) return;
+      if (node.parentTId) view.expandCollapseParentNode(this.setting, node.getParentNode(), true);
+      view.editNode(this.setting, node);
+    };
+
+    zTreeTools.moveNode = function (targetNode, node, moveType, isSilent) {
+      if (!node) return node;
+      var isParent = data.nodeIsParent(setting, targetNode);
+
+      if (targetNode && !isParent && this.setting.data.keep.leaf && moveType === consts.move.TYPE_INNER) {
+        return null;
+      } else if (targetNode && (node.parentTId == targetNode.tId && moveType == consts.move.TYPE_INNER || $$(node, this.setting).find("#" + targetNode.tId).length > 0)) {
+        return null;
+      } else if (!targetNode) {
+        targetNode = null;
+      }
+
+      var _this = this;
+
+      function moveCallback() {
+        view.moveNode(_this.setting, targetNode, node, moveType, false, isSilent);
+      }
+
+      if (tools.canAsync(this.setting, targetNode) && moveType === consts.move.TYPE_INNER) {
+        view.asyncNode(this.setting, targetNode, isSilent, moveCallback);
+      } else {
+        moveCallback();
+      }
+
+      return node;
+    };
+
+    zTreeTools.setEditable = function (editable) {
+      this.setting.edit.enable = editable;
+      return this.refresh();
+    };
+  },
+      //method of operate data
+  _data = {
+    setSonNodeLevel: function setSonNodeLevel(setting, parentNode, node) {
+      if (!node) return;
+      var children = data.nodeChildren(setting, node);
+      node.level = parentNode ? parentNode.level + 1 : 0;
+      if (!children) return;
+
+      for (var i = 0, l = children.length; i < l; i++) {
+        if (children[i]) data.setSonNodeLevel(setting, node, children[i]);
+      }
+    }
+  },
+      //method of event proxy
+  _event = {},
+      //method of event handler
+  _handler = {
+    onHoverOverNode: function onHoverOverNode(event, node) {
+      var setting = data.getSetting(event.data.treeId),
+          root = data.getRoot(setting);
+
+      if (root.curHoverNode != node) {
+        _handler.onHoverOutNode(event);
+      }
+
+      root.curHoverNode = node;
+      view.addHoverDom(setting, node);
+    },
+    onHoverOutNode: function onHoverOutNode(event, node) {
+      var setting = data.getSetting(event.data.treeId),
+          root = data.getRoot(setting);
+
+      if (root.curHoverNode && !data.isSelectedNode(setting, root.curHoverNode)) {
+        view.removeTreeDom(setting, root.curHoverNode);
+        root.curHoverNode = null;
+      }
+    },
+    onMousedownNode: function onMousedownNode(eventMouseDown, _node) {
+      var i,
+          l,
+          setting = data.getSetting(eventMouseDown.data.treeId),
+          root = data.getRoot(setting),
+          roots = data.getRoots(); //right click can't drag & drop
+
+      if (eventMouseDown.button == 2 || !setting.edit.enable || !setting.edit.drag.isCopy && !setting.edit.drag.isMove) return true; //input of edit node name can't drag & drop
+
+      var target = eventMouseDown.target,
+          _nodes = data.getRoot(setting).curSelectedList,
+          nodes = [];
+
+      if (!data.isSelectedNode(setting, _node)) {
+        nodes = [_node];
+      } else {
+        for (i = 0, l = _nodes.length; i < l; i++) {
+          if (_nodes[i].editNameFlag && tools.eqs(target.tagName, "input") && target.getAttribute("treeNode" + consts.id.INPUT) !== null) {
+            return true;
+          }
+
+          nodes.push(_nodes[i]);
+
+          if (nodes[0].parentTId !== _nodes[i].parentTId) {
+            nodes = [_node];
+            break;
+          }
+        }
+      }
+
+      view.editNodeBlur = true;
+      view.cancelCurEditNode(setting);
+      var doc = $(setting.treeObj.get(0).ownerDocument),
+          body = $(setting.treeObj.get(0).ownerDocument.body),
+          curNode,
+          tmpArrow,
+          tmpTarget,
+          isOtherTree = false,
+          targetSetting = setting,
+          sourceSetting = setting,
+          preNode,
+          nextNode,
+          preTmpTargetNodeId = null,
+          preTmpMoveType = null,
+          tmpTargetNodeId = null,
+          moveType = consts.move.TYPE_INNER,
+          mouseDownX = eventMouseDown.clientX,
+          mouseDownY = eventMouseDown.clientY,
+          startTime = new Date().getTime();
+
+      if (tools.uCanDo(setting)) {
+        doc.bind("mousemove", _docMouseMove);
+      }
+
+      function _docMouseMove(event) {
+        //avoid start drag after click node
+        if (root.dragFlag == 0 && Math.abs(mouseDownX - event.clientX) < setting.edit.drag.minMoveSize && Math.abs(mouseDownY - event.clientY) < setting.edit.drag.minMoveSize) {
+          return true;
+        }
+
+        var i, l, tmpNode, tmpDom, tmpNodes;
+        body.css("cursor", "pointer");
+
+        if (root.dragFlag == 0) {
+          if (tools.apply(setting.callback.beforeDrag, [setting.treeId, nodes], true) == false) {
+            _docMouseUp(event);
+
+            return true;
+          }
+
+          for (i = 0, l = nodes.length; i < l; i++) {
+            if (i == 0) {
+              root.dragNodeShowBefore = [];
+            }
+
+            tmpNode = nodes[i];
+
+            if (data.nodeIsParent(setting, tmpNode) && tmpNode.open) {
+              view.expandCollapseNode(setting, tmpNode, !tmpNode.open);
+              root.dragNodeShowBefore[tmpNode.tId] = true;
+            } else {
+              root.dragNodeShowBefore[tmpNode.tId] = false;
+            }
+          }
+
+          root.dragFlag = 1;
+          roots.showHoverDom = false;
+          tools.showIfameMask(setting, true); //sort
+
+          var isOrder = true,
+              lastIndex = -1;
+
+          if (nodes.length > 1) {
+            var pNodes = nodes[0].parentTId ? data.nodeChildren(setting, nodes[0].getParentNode()) : data.getNodes(setting);
+            tmpNodes = [];
+
+            for (i = 0, l = pNodes.length; i < l; i++) {
+              if (root.dragNodeShowBefore[pNodes[i].tId] !== undefined) {
+                if (isOrder && lastIndex > -1 && lastIndex + 1 !== i) {
+                  isOrder = false;
+                }
+
+                tmpNodes.push(pNodes[i]);
+                lastIndex = i;
+              }
+
+              if (nodes.length === tmpNodes.length) {
+                nodes = tmpNodes;
+                break;
+              }
+            }
+          }
+
+          if (isOrder) {
+            preNode = nodes[0].getPreNode();
+            nextNode = nodes[nodes.length - 1].getNextNode();
+          } //set node in selected
 
 
-/***/ }),
+          curNode = $$("<ul class='zTreeDragUL'></ul>", setting);
 
-/***/ "a691":
-/***/ (function(module, exports) {
+          for (i = 0, l = nodes.length; i < l; i++) {
+            tmpNode = nodes[i];
+            tmpNode.editNameFlag = false;
+            view.selectNode(setting, tmpNode, i > 0);
+            view.removeTreeDom(setting, tmpNode);
 
-var ceil = Math.ceil;
-var floor = Math.floor;
+            if (i > setting.edit.drag.maxShowNodeNum - 1) {
+              continue;
+            }
 
-// `ToInteger` abstract operation
-// https://tc39.github.io/ecma262/#sec-tointeger
-module.exports = function (argument) {
-  return isNaN(argument = +argument) ? 0 : (argument > 0 ? floor : ceil)(argument);
-};
+            tmpDom = $$("<li id='" + tmpNode.tId + "_tmp'></li>", setting);
+            tmpDom.append($$(tmpNode, consts.id.A, setting).clone());
+            tmpDom.css("padding", "0");
+            tmpDom.children("#" + tmpNode.tId + consts.id.A).removeClass(consts.node.CURSELECTED);
+            curNode.append(tmpDom);
 
+            if (i == setting.edit.drag.maxShowNodeNum - 1) {
+              tmpDom = $$("<li id='" + tmpNode.tId + "_moretmp'><a>  ...  </a></li>", setting);
+              curNode.append(tmpDom);
+            }
+          }
+
+          curNode.attr("id", nodes[0].tId + consts.id.UL + "_tmp");
+          curNode.addClass(setting.treeObj.attr("class"));
+          curNode.appendTo(body);
+          tmpArrow = $$("<span class='tmpzTreeMove_arrow'></span>", setting);
+          tmpArrow.attr("id", "zTreeMove_arrow_tmp");
+          tmpArrow.appendTo(body);
+          setting.treeObj.trigger(consts.event.DRAG, [event, setting.treeId, nodes]);
+        }
+
+        if (root.dragFlag == 1) {
+          if (tmpTarget && tmpArrow.attr("id") == event.target.id && tmpTargetNodeId && event.clientX + doc.scrollLeft() + 2 > $("#" + tmpTargetNodeId + consts.id.A, tmpTarget).offset().left) {
+            var xT = $("#" + tmpTargetNodeId + consts.id.A, tmpTarget);
+            event.target = xT.length > 0 ? xT.get(0) : event.target;
+          } else if (tmpTarget) {
+            tmpTarget.removeClass(consts.node.TMPTARGET_TREE);
+            if (tmpTargetNodeId) $("#" + tmpTargetNodeId + consts.id.A, tmpTarget).removeClass(consts.node.TMPTARGET_NODE + "_" + consts.move.TYPE_PREV).removeClass(consts.node.TMPTARGET_NODE + "_" + _consts.move.TYPE_NEXT).removeClass(consts.node.TMPTARGET_NODE + "_" + _consts.move.TYPE_INNER);
+          }
+
+          tmpTarget = null;
+          tmpTargetNodeId = null; //judge drag & drop in multi ztree
+
+          isOtherTree = false;
+          targetSetting = setting;
+          var settings = data.getSettings();
+
+          for (var s in settings) {
+            if (settings[s].treeId && settings[s].edit.enable && settings[s].treeId != setting.treeId && (event.target.id == settings[s].treeId || $(event.target).parents("#" + settings[s].treeId).length > 0)) {
+              isOtherTree = true;
+              targetSetting = settings[s];
+            }
+          }
+
+          var docScrollTop = doc.scrollTop(),
+              docScrollLeft = doc.scrollLeft(),
+              treeOffset = targetSetting.treeObj.offset(),
+              scrollHeight = targetSetting.treeObj.get(0).scrollHeight,
+              scrollWidth = targetSetting.treeObj.get(0).scrollWidth,
+              dTop = event.clientY + docScrollTop - treeOffset.top,
+              dBottom = targetSetting.treeObj.height() + treeOffset.top - event.clientY - docScrollTop,
+              dLeft = event.clientX + docScrollLeft - treeOffset.left,
+              dRight = targetSetting.treeObj.width() + treeOffset.left - event.clientX - docScrollLeft,
+              isTop = dTop < setting.edit.drag.borderMax && dTop > setting.edit.drag.borderMin,
+              isBottom = dBottom < setting.edit.drag.borderMax && dBottom > setting.edit.drag.borderMin,
+              isLeft = dLeft < setting.edit.drag.borderMax && dLeft > setting.edit.drag.borderMin,
+              isRight = dRight < setting.edit.drag.borderMax && dRight > setting.edit.drag.borderMin,
+              isTreeInner = dTop > setting.edit.drag.borderMin && dBottom > setting.edit.drag.borderMin && dLeft > setting.edit.drag.borderMin && dRight > setting.edit.drag.borderMin,
+              isTreeTop = isTop && targetSetting.treeObj.scrollTop() <= 0,
+              isTreeBottom = isBottom && targetSetting.treeObj.scrollTop() + targetSetting.treeObj.height() + 10 >= scrollHeight,
+              isTreeLeft = isLeft && targetSetting.treeObj.scrollLeft() <= 0,
+              isTreeRight = isRight && targetSetting.treeObj.scrollLeft() + targetSetting.treeObj.width() + 10 >= scrollWidth;
+
+          if (event.target && tools.isChildOrSelf(event.target, targetSetting.treeId)) {
+            //get node <li> dom
+            var targetObj = event.target;
+
+            while (targetObj && targetObj.tagName && !tools.eqs(targetObj.tagName, "li") && targetObj.id != targetSetting.treeId) {
+              targetObj = targetObj.parentNode;
+            }
+
+            var canMove = true; //don't move to self or children of self
+
+            for (i = 0, l = nodes.length; i < l; i++) {
+              tmpNode = nodes[i];
+
+              if (targetObj.id === tmpNode.tId) {
+                canMove = false;
+                break;
+              } else if ($$(tmpNode, setting).find("#" + targetObj.id).length > 0) {
+                canMove = false;
+                break;
+              }
+            }
+
+            if (canMove && event.target && tools.isChildOrSelf(event.target, targetObj.id + consts.id.A)) {
+              tmpTarget = $(targetObj);
+              tmpTargetNodeId = targetObj.id;
+            }
+          } //the mouse must be in zTree
+
+
+          tmpNode = nodes[0];
+
+          if (isTreeInner && tools.isChildOrSelf(event.target, targetSetting.treeId)) {
+            //judge mouse move in root of ztree
+            if (!tmpTarget && (event.target.id == targetSetting.treeId || isTreeTop || isTreeBottom || isTreeLeft || isTreeRight) && (isOtherTree || !isOtherTree && tmpNode.parentTId)) {
+              tmpTarget = targetSetting.treeObj;
+            } //auto scroll top
+
+
+            if (isTop) {
+              targetSetting.treeObj.scrollTop(targetSetting.treeObj.scrollTop() - 10);
+            } else if (isBottom) {
+              targetSetting.treeObj.scrollTop(targetSetting.treeObj.scrollTop() + 10);
+            }
+
+            if (isLeft) {
+              targetSetting.treeObj.scrollLeft(targetSetting.treeObj.scrollLeft() - 10);
+            } else if (isRight) {
+              targetSetting.treeObj.scrollLeft(targetSetting.treeObj.scrollLeft() + 10);
+            } //auto scroll left
+
+
+            if (tmpTarget && tmpTarget != targetSetting.treeObj && tmpTarget.offset().left < targetSetting.treeObj.offset().left) {
+              targetSetting.treeObj.scrollLeft(targetSetting.treeObj.scrollLeft() + tmpTarget.offset().left - targetSetting.treeObj.offset().left);
+            }
+          }
+
+          curNode.css({
+            "top": event.clientY + docScrollTop + 3 + "px",
+            "left": event.clientX + docScrollLeft + 3 + "px"
+          });
+          var dX = 0;
+          var dY = 0;
+
+          if (tmpTarget && tmpTarget.attr("id") != targetSetting.treeId) {
+            var tmpTargetNode = tmpTargetNodeId == null ? null : data.getNodeCache(targetSetting, tmpTargetNodeId),
+                isCopy = (event.ctrlKey || event.metaKey) && setting.edit.drag.isMove && setting.edit.drag.isCopy || !setting.edit.drag.isMove && setting.edit.drag.isCopy,
+                isPrev = !!(preNode && tmpTargetNodeId === preNode.tId),
+                isNext = !!(nextNode && tmpTargetNodeId === nextNode.tId),
+                isInner = tmpNode.parentTId && tmpNode.parentTId == tmpTargetNodeId,
+                canPrev = (isCopy || !isNext) && tools.apply(targetSetting.edit.drag.prev, [targetSetting.treeId, nodes, tmpTargetNode], !!targetSetting.edit.drag.prev),
+                canNext = (isCopy || !isPrev) && tools.apply(targetSetting.edit.drag.next, [targetSetting.treeId, nodes, tmpTargetNode], !!targetSetting.edit.drag.next),
+                canInner = (isCopy || !isInner) && !(targetSetting.data.keep.leaf && !data.nodeIsParent(setting, tmpTargetNode)) && tools.apply(targetSetting.edit.drag.inner, [targetSetting.treeId, nodes, tmpTargetNode], !!targetSetting.edit.drag.inner);
+
+            function clearMove() {
+              tmpTarget = null;
+              tmpTargetNodeId = "";
+              moveType = consts.move.TYPE_INNER;
+              tmpArrow.css({
+                "display": "none"
+              });
+
+              if (window.zTreeMoveTimer) {
+                clearTimeout(window.zTreeMoveTimer);
+                window.zTreeMoveTargetNodeTId = null;
+              }
+            }
+
+            if (!canPrev && !canNext && !canInner) {
+              clearMove();
+            } else {
+              var tmpTargetA = $("#" + tmpTargetNodeId + consts.id.A, tmpTarget),
+                  tmpNextA = tmpTargetNode.isLastNode ? null : $("#" + tmpTargetNode.getNextNode().tId + consts.id.A, tmpTarget.next()),
+                  tmpTop = tmpTargetA.offset().top,
+                  tmpLeft = tmpTargetA.offset().left,
+                  prevPercent = canPrev ? canInner ? 0.25 : canNext ? 0.5 : 1 : -1,
+                  nextPercent = canNext ? canInner ? 0.75 : canPrev ? 0.5 : 0 : -1,
+                  dY_percent = (event.clientY + docScrollTop - tmpTop) / tmpTargetA.height();
+
+              if ((prevPercent == 1 || dY_percent <= prevPercent && dY_percent >= -.2) && canPrev) {
+                dX = 1 - tmpArrow.width();
+                dY = tmpTop - tmpArrow.height() / 2;
+                moveType = consts.move.TYPE_PREV;
+              } else if ((nextPercent == 0 || dY_percent >= nextPercent && dY_percent <= 1.2) && canNext) {
+                dX = 1 - tmpArrow.width();
+                dY = tmpNextA == null || data.nodeIsParent(setting, tmpTargetNode) && tmpTargetNode.open ? tmpTop + tmpTargetA.height() - tmpArrow.height() / 2 : tmpNextA.offset().top - tmpArrow.height() / 2;
+                moveType = consts.move.TYPE_NEXT;
+              } else if (canInner) {
+                dX = 5 - tmpArrow.width();
+                dY = tmpTop;
+                moveType = consts.move.TYPE_INNER;
+              } else {
+                clearMove();
+              }
+
+              if (tmpTarget) {
+                tmpArrow.css({
+                  "display": "block",
+                  "top": dY + "px",
+                  "left": tmpLeft + dX + "px"
+                });
+                tmpTargetA.addClass(consts.node.TMPTARGET_NODE + "_" + moveType);
+
+                if (preTmpTargetNodeId != tmpTargetNodeId || preTmpMoveType != moveType) {
+                  startTime = new Date().getTime();
+                }
+
+                if (tmpTargetNode && data.nodeIsParent(setting, tmpTargetNode) && moveType == consts.move.TYPE_INNER) {
+                  var startTimer = true;
+
+                  if (window.zTreeMoveTimer && window.zTreeMoveTargetNodeTId !== tmpTargetNode.tId) {
+                    clearTimeout(window.zTreeMoveTimer);
+                    window.zTreeMoveTargetNodeTId = null;
+                  } else if (window.zTreeMoveTimer && window.zTreeMoveTargetNodeTId === tmpTargetNode.tId) {
+                    startTimer = false;
+                  }
+
+                  if (startTimer) {
+                    window.zTreeMoveTimer = setTimeout(function () {
+                      if (moveType != consts.move.TYPE_INNER) return;
+
+                      if (tmpTargetNode && data.nodeIsParent(setting, tmpTargetNode) && !tmpTargetNode.open && new Date().getTime() - startTime > targetSetting.edit.drag.autoOpenTime && tools.apply(targetSetting.callback.beforeDragOpen, [targetSetting.treeId, tmpTargetNode], true)) {
+                        view.switchNode(targetSetting, tmpTargetNode);
+
+                        if (targetSetting.edit.drag.autoExpandTrigger) {
+                          targetSetting.treeObj.trigger(consts.event.EXPAND, [targetSetting.treeId, tmpTargetNode]);
+                        }
+                      }
+                    }, targetSetting.edit.drag.autoOpenTime + 50);
+                    window.zTreeMoveTargetNodeTId = tmpTargetNode.tId;
+                  }
+                }
+              }
+            }
+          } else {
+            moveType = consts.move.TYPE_INNER;
+
+            if (tmpTarget && tools.apply(targetSetting.edit.drag.inner, [targetSetting.treeId, nodes, null], !!targetSetting.edit.drag.inner)) {
+              tmpTarget.addClass(consts.node.TMPTARGET_TREE);
+            } else {
+              tmpTarget = null;
+            }
+
+            tmpArrow.css({
+              "display": "none"
+            });
+
+            if (window.zTreeMoveTimer) {
+              clearTimeout(window.zTreeMoveTimer);
+              window.zTreeMoveTargetNodeTId = null;
+            }
+          }
+
+          preTmpTargetNodeId = tmpTargetNodeId;
+          preTmpMoveType = moveType;
+          setting.treeObj.trigger(consts.event.DRAGMOVE, [event, setting.treeId, nodes]);
+        }
+
+        return false;
+      }
+
+      doc.bind("mouseup", _docMouseUp);
+
+      function _docMouseUp(event) {
+        if (window.zTreeMoveTimer) {
+          clearTimeout(window.zTreeMoveTimer);
+          window.zTreeMoveTargetNodeTId = null;
+        }
+
+        preTmpTargetNodeId = null;
+        preTmpMoveType = null;
+        doc.unbind("mousemove", _docMouseMove);
+        doc.unbind("mouseup", _docMouseUp);
+        doc.unbind("selectstart", _docSelect);
+        body.css("cursor", "");
+
+        if (tmpTarget) {
+          tmpTarget.removeClass(consts.node.TMPTARGET_TREE);
+          if (tmpTargetNodeId) $("#" + tmpTargetNodeId + consts.id.A, tmpTarget).removeClass(consts.node.TMPTARGET_NODE + "_" + consts.move.TYPE_PREV).removeClass(consts.node.TMPTARGET_NODE + "_" + _consts.move.TYPE_NEXT).removeClass(consts.node.TMPTARGET_NODE + "_" + _consts.move.TYPE_INNER);
+        }
+
+        tools.showIfameMask(setting, false);
+        roots.showHoverDom = true;
+        if (root.dragFlag == 0) return;
+        root.dragFlag = 0;
+        var i, l, tmpNode;
+
+        for (i = 0, l = nodes.length; i < l; i++) {
+          tmpNode = nodes[i];
+
+          if (data.nodeIsParent(setting, tmpNode) && root.dragNodeShowBefore[tmpNode.tId] && !tmpNode.open) {
+            view.expandCollapseNode(setting, tmpNode, !tmpNode.open);
+            delete root.dragNodeShowBefore[tmpNode.tId];
+          }
+        }
+
+        if (curNode) curNode.remove();
+        if (tmpArrow) tmpArrow.remove();
+        var isCopy = (event.ctrlKey || event.metaKey) && setting.edit.drag.isMove && setting.edit.drag.isCopy || !setting.edit.drag.isMove && setting.edit.drag.isCopy;
+
+        if (!isCopy && tmpTarget && tmpTargetNodeId && nodes[0].parentTId && tmpTargetNodeId == nodes[0].parentTId && moveType == consts.move.TYPE_INNER) {
+          tmpTarget = null;
+        }
+
+        if (tmpTarget) {
+          var dragTargetNode = tmpTargetNodeId == null ? null : data.getNodeCache(targetSetting, tmpTargetNodeId);
+
+          if (tools.apply(setting.callback.beforeDrop, [targetSetting.treeId, nodes, dragTargetNode, moveType, isCopy], true) == false) {
+            view.selectNodes(sourceSetting, nodes);
+            return;
+          }
+
+          var newNodes = isCopy ? tools.clone(nodes) : nodes;
+
+          function dropCallback() {
+            if (isOtherTree) {
+              if (!isCopy) {
+                for (var i = 0, l = nodes.length; i < l; i++) {
+                  view.removeNode(setting, nodes[i]);
+                }
+              }
+
+              if (moveType == consts.move.TYPE_INNER) {
+                view.addNodes(targetSetting, dragTargetNode, -1, newNodes);
+              } else {
+                view.addNodes(targetSetting, dragTargetNode.getParentNode(), moveType == consts.move.TYPE_PREV ? dragTargetNode.getIndex() : dragTargetNode.getIndex() + 1, newNodes);
+              }
+            } else {
+              if (isCopy && moveType == consts.move.TYPE_INNER) {
+                view.addNodes(targetSetting, dragTargetNode, -1, newNodes);
+              } else if (isCopy) {
+                view.addNodes(targetSetting, dragTargetNode.getParentNode(), moveType == consts.move.TYPE_PREV ? dragTargetNode.getIndex() : dragTargetNode.getIndex() + 1, newNodes);
+              } else {
+                if (moveType != consts.move.TYPE_NEXT) {
+                  for (i = 0, l = newNodes.length; i < l; i++) {
+                    view.moveNode(targetSetting, dragTargetNode, newNodes[i], moveType, false);
+                  }
+                } else {
+                  for (i = -1, l = newNodes.length - 1; i < l; l--) {
+                    view.moveNode(targetSetting, dragTargetNode, newNodes[l], moveType, false);
+                  }
+                }
+              }
+            }
+
+            view.selectNodes(targetSetting, newNodes);
+            var a = $$(newNodes[0], setting).get(0);
+            view.scrollIntoView(setting, a);
+            setting.treeObj.trigger(consts.event.DROP, [event, targetSetting.treeId, newNodes, dragTargetNode, moveType, isCopy]);
+          }
+
+          if (moveType == consts.move.TYPE_INNER && tools.canAsync(targetSetting, dragTargetNode)) {
+            view.asyncNode(targetSetting, dragTargetNode, false, dropCallback);
+          } else {
+            dropCallback();
+          }
+        } else {
+          view.selectNodes(sourceSetting, nodes);
+          setting.treeObj.trigger(consts.event.DROP, [event, setting.treeId, nodes, null, null, null]);
+        }
+      }
+
+      doc.bind("selectstart", _docSelect);
+
+      function _docSelect() {
+        return false;
+      } // 2018-03-30 FireFox has fixed this issue.
+      //Avoid FireFox's Bug
+      //If zTree Div CSS set 'overflow', so drag node outside of zTree, and event.target is error.
+      // if(eventMouseDown.preventDefault) {
+      // 	eventMouseDown.preventDefault();
+      // }
+
+
+      return true;
+    }
+  },
+      //method of tools for zTree
+  _tools = {
+    getAbs: function getAbs(obj) {
+      var oRect = obj.getBoundingClientRect(),
+          scrollTop = document.body.scrollTop + document.documentElement.scrollTop,
+          scrollLeft = document.body.scrollLeft + document.documentElement.scrollLeft;
+      return [oRect.left + scrollLeft, oRect.top + scrollTop];
+    },
+    inputFocus: function inputFocus(inputObj) {
+      if (inputObj.get(0)) {
+        inputObj.focus();
+        tools.setCursorPosition(inputObj.get(0), inputObj.val().length);
+      }
+    },
+    inputSelect: function inputSelect(inputObj) {
+      if (inputObj.get(0)) {
+        inputObj.focus();
+        inputObj.select();
+      }
+    },
+    setCursorPosition: function setCursorPosition(obj, pos) {
+      if (obj.setSelectionRange) {
+        obj.focus();
+        obj.setSelectionRange(pos, pos);
+      } else if (obj.createTextRange) {
+        var range = obj.createTextRange();
+        range.collapse(true);
+        range.moveEnd('character', pos);
+        range.moveStart('character', pos);
+        range.select();
+      }
+    },
+    showIfameMask: function showIfameMask(setting, showSign) {
+      var root = data.getRoot(setting); //clear full mask
+
+      while (root.dragMaskList.length > 0) {
+        root.dragMaskList[0].remove();
+        root.dragMaskList.shift();
+      }
+
+      if (showSign) {
+        //show mask
+        var iframeList = $$("iframe", setting);
+
+        for (var i = 0, l = iframeList.length; i < l; i++) {
+          var obj = iframeList.get(i),
+              r = tools.getAbs(obj),
+              dragMask = $$("<div id='zTreeMask_" + i + "' class='zTreeMask' style='top:" + r[1] + "px; left:" + r[0] + "px; width:" + obj.offsetWidth + "px; height:" + obj.offsetHeight + "px;'></div>", setting);
+          dragMask.appendTo($$("body", setting));
+          root.dragMaskList.push(dragMask);
+        }
+      }
+    }
+  },
+      //method of operate ztree dom
+  _view = {
+    addEditBtn: function addEditBtn(setting, node) {
+      if (node.editNameFlag || $$(node, consts.id.EDIT, setting).length > 0) {
+        return;
+      }
+
+      if (!tools.apply(setting.edit.showRenameBtn, [setting.treeId, node], setting.edit.showRenameBtn)) {
+        return;
+      }
+
+      var aObj = $$(node, consts.id.A, setting),
+          editStr = "<span class='" + consts.className.BUTTON + " edit' id='" + node.tId + consts.id.EDIT + "' title='" + tools.apply(setting.edit.renameTitle, [setting.treeId, node], setting.edit.renameTitle) + "' treeNode" + consts.id.EDIT + " style='display:none;'></span>";
+      aObj.append(editStr);
+      $$(node, consts.id.EDIT, setting).bind('click', function () {
+        if (!tools.uCanDo(setting) || tools.apply(setting.callback.beforeEditName, [setting.treeId, node], true) == false) return false;
+        view.editNode(setting, node);
+        return false;
+      }).show();
+    },
+    addRemoveBtn: function addRemoveBtn(setting, node) {
+      if (node.editNameFlag || $$(node, consts.id.REMOVE, setting).length > 0) {
+        return;
+      }
+
+      if (!tools.apply(setting.edit.showRemoveBtn, [setting.treeId, node], setting.edit.showRemoveBtn)) {
+        return;
+      }
+
+      var aObj = $$(node, consts.id.A, setting),
+          removeStr = "<span class='" + consts.className.BUTTON + " remove' id='" + node.tId + consts.id.REMOVE + "' title='" + tools.apply(setting.edit.removeTitle, [setting.treeId, node], setting.edit.removeTitle) + "' treeNode" + consts.id.REMOVE + " style='display:none;'></span>";
+      aObj.append(removeStr);
+      $$(node, consts.id.REMOVE, setting).bind('click', function () {
+        if (!tools.uCanDo(setting) || tools.apply(setting.callback.beforeRemove, [setting.treeId, node], true) == false) return false;
+        view.removeNode(setting, node);
+        setting.treeObj.trigger(consts.event.REMOVE, [setting.treeId, node]);
+        return false;
+      }).bind('mousedown', function (eventMouseDown) {
+        return true;
+      }).show();
+    },
+    addHoverDom: function addHoverDom(setting, node) {
+      if (data.getRoots().showHoverDom) {
+        node.isHover = true;
+
+        if (setting.edit.enable) {
+          view.addEditBtn(setting, node);
+          view.addRemoveBtn(setting, node);
+        }
+
+        tools.apply(setting.view.addHoverDom, [setting.treeId, node]);
+      }
+    },
+    cancelCurEditNode: function cancelCurEditNode(setting, forceName, isCancel) {
+      var root = data.getRoot(setting),
+          node = root.curEditNode;
+
+      if (node) {
+        var inputObj = root.curEditInput,
+            newName = forceName ? forceName : isCancel ? data.nodeName(setting, node) : inputObj.val();
+
+        if (tools.apply(setting.callback.beforeRename, [setting.treeId, node, newName, isCancel], true) === false) {
+          return false;
+        }
+
+        data.nodeName(setting, node, newName);
+        var aObj = $$(node, consts.id.A, setting);
+        aObj.removeClass(consts.node.CURSELECTED_EDIT);
+        inputObj.unbind();
+        view.setNodeName(setting, node);
+        node.editNameFlag = false;
+        root.curEditNode = null;
+        root.curEditInput = null;
+        view.selectNode(setting, node, false);
+        setting.treeObj.trigger(consts.event.RENAME, [setting.treeId, node, isCancel]);
+      }
+
+      root.noSelection = true;
+      return true;
+    },
+    editNode: function editNode(setting, node) {
+      var root = data.getRoot(setting);
+      view.editNodeBlur = false;
+
+      if (data.isSelectedNode(setting, node) && root.curEditNode == node && node.editNameFlag) {
+        setTimeout(function () {
+          tools.inputFocus(root.curEditInput);
+        }, 0);
+        return;
+      }
+
+      node.editNameFlag = true;
+      view.removeTreeDom(setting, node);
+      view.cancelCurEditNode(setting);
+      view.selectNode(setting, node, false);
+      $$(node, consts.id.SPAN, setting).html("<input type=text class='rename' id='" + node.tId + consts.id.INPUT + "' treeNode" + consts.id.INPUT + " >");
+      var inputObj = $$(node, consts.id.INPUT, setting);
+      inputObj.attr("value", data.nodeName(setting, node));
+
+      if (setting.edit.editNameSelectAll) {
+        tools.inputSelect(inputObj);
+      } else {
+        tools.inputFocus(inputObj);
+      }
+
+      inputObj.bind('blur', function (event) {
+        if (!view.editNodeBlur) {
+          view.cancelCurEditNode(setting);
+        }
+      }).bind('keydown', function (event) {
+        if (event.keyCode == "13") {
+          view.editNodeBlur = true;
+          view.cancelCurEditNode(setting);
+        } else if (event.keyCode == "27") {
+          view.cancelCurEditNode(setting, null, true);
+        }
+      }).bind('click', function (event) {
+        return false;
+      }).bind('dblclick', function (event) {
+        return false;
+      });
+      $$(node, consts.id.A, setting).addClass(consts.node.CURSELECTED_EDIT);
+      root.curEditInput = inputObj;
+      root.noSelection = false;
+      root.curEditNode = node;
+    },
+    moveNode: function moveNode(setting, targetNode, node, moveType, animateFlag, isSilent) {
+      var root = data.getRoot(setting);
+      if (targetNode == node) return;
+      if (setting.data.keep.leaf && targetNode && !data.nodeIsParent(setting, targetNode) && moveType == consts.move.TYPE_INNER) return;
+      var oldParentNode = node.parentTId ? node.getParentNode() : root,
+          targetNodeIsRoot = targetNode === null || targetNode == root;
+      if (targetNodeIsRoot && targetNode === null) targetNode = root;
+      if (targetNodeIsRoot) moveType = consts.move.TYPE_INNER;
+      var targetParentNode = targetNode.parentTId ? targetNode.getParentNode() : root;
+
+      if (moveType != consts.move.TYPE_PREV && moveType != consts.move.TYPE_NEXT) {
+        moveType = consts.move.TYPE_INNER;
+      }
+
+      if (moveType == consts.move.TYPE_INNER) {
+        if (targetNodeIsRoot) {
+          //parentTId of root node is null
+          node.parentTId = null;
+        } else {
+          if (!data.nodeIsParent(setting, targetNode)) {
+            data.nodeIsParent(setting, targetNode, true);
+            targetNode.open = !!targetNode.open;
+            view.setNodeLineIcos(setting, targetNode);
+          }
+
+          node.parentTId = targetNode.tId;
+        }
+      } //move node Dom
+
+
+      var targetObj, target_ulObj;
+
+      if (targetNodeIsRoot) {
+        targetObj = setting.treeObj;
+        target_ulObj = targetObj;
+      } else {
+        if (!isSilent && moveType == consts.move.TYPE_INNER) {
+          view.expandCollapseNode(setting, targetNode, true, false);
+        } else if (!isSilent) {
+          view.expandCollapseNode(setting, targetNode.getParentNode(), true, false);
+        }
+
+        targetObj = $$(targetNode, setting);
+        target_ulObj = $$(targetNode, consts.id.UL, setting);
+
+        if (!!targetObj.get(0) && !target_ulObj.get(0)) {
+          var ulstr = [];
+          view.makeUlHtml(setting, targetNode, ulstr, '');
+          targetObj.append(ulstr.join(''));
+        }
+
+        target_ulObj = $$(targetNode, consts.id.UL, setting);
+      }
+
+      var nodeDom = $$(node, setting);
+
+      if (!nodeDom.get(0)) {
+        nodeDom = view.appendNodes(setting, node.level, [node], null, -1, false, true).join('');
+      } else if (!targetObj.get(0)) {
+        nodeDom.remove();
+      }
+
+      if (target_ulObj.get(0) && moveType == consts.move.TYPE_INNER) {
+        target_ulObj.append(nodeDom);
+      } else if (targetObj.get(0) && moveType == consts.move.TYPE_PREV) {
+        targetObj.before(nodeDom);
+      } else if (targetObj.get(0) && moveType == consts.move.TYPE_NEXT) {
+        targetObj.after(nodeDom);
+      } //repair the data after move
+
+
+      var i,
+          l,
+          tmpSrcIndex = -1,
+          tmpTargetIndex = 0,
+          oldNeighbor = null,
+          newNeighbor = null,
+          oldLevel = node.level;
+      var oldChildren = data.nodeChildren(setting, oldParentNode);
+      var targetParentChildren = data.nodeChildren(setting, targetParentNode);
+      var targetChildren = data.nodeChildren(setting, targetNode);
+
+      if (node.isFirstNode) {
+        tmpSrcIndex = 0;
+
+        if (oldChildren.length > 1) {
+          oldNeighbor = oldChildren[1];
+          oldNeighbor.isFirstNode = true;
+        }
+      } else if (node.isLastNode) {
+        tmpSrcIndex = oldChildren.length - 1;
+        oldNeighbor = oldChildren[tmpSrcIndex - 1];
+        oldNeighbor.isLastNode = true;
+      } else {
+        for (i = 0, l = oldChildren.length; i < l; i++) {
+          if (oldChildren[i].tId == node.tId) {
+            tmpSrcIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (tmpSrcIndex >= 0) {
+        oldChildren.splice(tmpSrcIndex, 1);
+      }
+
+      if (moveType != consts.move.TYPE_INNER) {
+        for (i = 0, l = targetParentChildren.length; i < l; i++) {
+          if (targetParentChildren[i].tId == targetNode.tId) tmpTargetIndex = i;
+        }
+      }
+
+      if (moveType == consts.move.TYPE_INNER) {
+        if (!targetChildren) {
+          targetChildren = data.nodeChildren(setting, targetNode, []);
+        }
+
+        if (targetChildren.length > 0) {
+          newNeighbor = targetChildren[targetChildren.length - 1];
+          newNeighbor.isLastNode = false;
+        }
+
+        targetChildren.splice(targetChildren.length, 0, node);
+        node.isLastNode = true;
+        node.isFirstNode = targetChildren.length == 1;
+      } else if (targetNode.isFirstNode && moveType == consts.move.TYPE_PREV) {
+        targetParentChildren.splice(tmpTargetIndex, 0, node);
+        newNeighbor = targetNode;
+        newNeighbor.isFirstNode = false;
+        node.parentTId = targetNode.parentTId;
+        node.isFirstNode = true;
+        node.isLastNode = false;
+      } else if (targetNode.isLastNode && moveType == consts.move.TYPE_NEXT) {
+        targetParentChildren.splice(tmpTargetIndex + 1, 0, node);
+        newNeighbor = targetNode;
+        newNeighbor.isLastNode = false;
+        node.parentTId = targetNode.parentTId;
+        node.isFirstNode = false;
+        node.isLastNode = true;
+      } else {
+        if (moveType == consts.move.TYPE_PREV) {
+          targetParentChildren.splice(tmpTargetIndex, 0, node);
+        } else {
+          targetParentChildren.splice(tmpTargetIndex + 1, 0, node);
+        }
+
+        node.parentTId = targetNode.parentTId;
+        node.isFirstNode = false;
+        node.isLastNode = false;
+      }
+
+      data.fixPIdKeyValue(setting, node);
+      data.setSonNodeLevel(setting, node.getParentNode(), node); //repair node what been moved
+
+      view.setNodeLineIcos(setting, node);
+      view.repairNodeLevelClass(setting, node, oldLevel); //repair node's old parentNode dom
+
+      if (!setting.data.keep.parent && oldChildren.length < 1) {
+        //old parentNode has no child nodes
+        data.nodeIsParent(setting, oldParentNode, false);
+        oldParentNode.open = false;
+        var tmp_ulObj = $$(oldParentNode, consts.id.UL, setting),
+            tmp_switchObj = $$(oldParentNode, consts.id.SWITCH, setting),
+            tmp_icoObj = $$(oldParentNode, consts.id.ICON, setting);
+        view.replaceSwitchClass(oldParentNode, tmp_switchObj, consts.folder.DOCU);
+        view.replaceIcoClass(oldParentNode, tmp_icoObj, consts.folder.DOCU);
+        tmp_ulObj.css("display", "none");
+      } else if (oldNeighbor) {
+        //old neigbor node
+        view.setNodeLineIcos(setting, oldNeighbor);
+      } //new neigbor node
+
+
+      if (newNeighbor) {
+        view.setNodeLineIcos(setting, newNeighbor);
+      } //repair checkbox / radio
+
+
+      if (!!setting.check && setting.check.enable && view.repairChkClass) {
+        view.repairChkClass(setting, oldParentNode);
+        view.repairParentChkClassWithSelf(setting, oldParentNode);
+        if (oldParentNode != node.parent) view.repairParentChkClassWithSelf(setting, node);
+      } //expand parents after move
+
+
+      if (!isSilent) {
+        view.expandCollapseParentNode(setting, node.getParentNode(), true, animateFlag);
+      }
+    },
+    removeEditBtn: function removeEditBtn(setting, node) {
+      $$(node, consts.id.EDIT, setting).unbind().remove();
+    },
+    removeRemoveBtn: function removeRemoveBtn(setting, node) {
+      $$(node, consts.id.REMOVE, setting).unbind().remove();
+    },
+    removeTreeDom: function removeTreeDom(setting, node) {
+      node.isHover = false;
+      view.removeEditBtn(setting, node);
+      view.removeRemoveBtn(setting, node);
+      tools.apply(setting.view.removeHoverDom, [setting.treeId, node]);
+    },
+    repairNodeLevelClass: function repairNodeLevelClass(setting, node, oldLevel) {
+      if (oldLevel === node.level) return;
+      var liObj = $$(node, setting),
+          aObj = $$(node, consts.id.A, setting),
+          ulObj = $$(node, consts.id.UL, setting),
+          oldClass = consts.className.LEVEL + oldLevel,
+          newClass = consts.className.LEVEL + node.level;
+      liObj.removeClass(oldClass);
+      liObj.addClass(newClass);
+      aObj.removeClass(oldClass);
+      aObj.addClass(newClass);
+      ulObj.removeClass(oldClass);
+      ulObj.addClass(newClass);
+    },
+    selectNodes: function selectNodes(setting, nodes) {
+      for (var i = 0, l = nodes.length; i < l; i++) {
+        view.selectNode(setting, nodes[i], i > 0);
+      }
+    }
+  },
+      _z = {
+    tools: _tools,
+    view: _view,
+    event: _event,
+    data: _data
+  };
+
+  $.extend(true, $.fn.zTree.consts, _consts);
+  $.extend(true, $.fn.zTree._z, _z);
+  var zt = $.fn.zTree,
+      tools = zt._z.tools,
+      consts = zt.consts,
+      view = zt._z.view,
+      data = zt._z.data,
+      event = zt._z.event,
+      $$ = tools.$;
+  data.exSetting(_setting);
+  data.addInitBind(_bindEvent);
+  data.addInitUnBind(_unbindEvent);
+  data.addInitCache(_initCache);
+  data.addInitNode(_initNode);
+  data.addInitProxy(_eventProxy);
+  data.addInitRoot(_initRoot);
+  data.addZTreeTools(_zTreeTools);
+  var _cancelPreSelectedNode = view.cancelPreSelectedNode;
+
+  view.cancelPreSelectedNode = function (setting, node) {
+    var list = data.getRoot(setting).curSelectedList;
+
+    for (var i = 0, j = list.length; i < j; i++) {
+      if (!node || node === list[i]) {
+        view.removeTreeDom(setting, list[i]);
+        if (node) break;
+      }
+    }
+
+    if (_cancelPreSelectedNode) _cancelPreSelectedNode.apply(view, arguments);
+  };
+
+  var _createNodes = view.createNodes;
+
+  view.createNodes = function (setting, level, nodes, parentNode, index) {
+    if (_createNodes) {
+      _createNodes.apply(view, arguments);
+    }
+
+    if (!nodes) return;
+
+    if (view.repairParentChkClassWithSelf) {
+      view.repairParentChkClassWithSelf(setting, parentNode);
+    }
+  };
+
+  var _makeNodeUrl = view.makeNodeUrl;
+
+  view.makeNodeUrl = function (setting, node) {
+    return setting.edit.enable ? null : _makeNodeUrl.apply(view, arguments);
+  };
+
+  var _removeNode = view.removeNode;
+
+  view.removeNode = function (setting, node) {
+    var root = data.getRoot(setting);
+    if (root.curEditNode === node) root.curEditNode = null;
+
+    if (_removeNode) {
+      _removeNode.apply(view, arguments);
+    }
+  };
+
+  var _selectNode = view.selectNode;
+
+  view.selectNode = function (setting, node, addFlag) {
+    var root = data.getRoot(setting);
+
+    if (data.isSelectedNode(setting, node) && root.curEditNode == node && node.editNameFlag) {
+      return false;
+    }
+
+    if (_selectNode) _selectNode.apply(view, arguments);
+    view.addHoverDom(setting, node);
+    return true;
+  };
+
+  var _uCanDo = tools.uCanDo;
+
+  tools.uCanDo = function (setting, e) {
+    var root = data.getRoot(setting);
+
+    if (e && (tools.eqs(e.type, "mouseover") || tools.eqs(e.type, "mouseout") || tools.eqs(e.type, "mousedown") || tools.eqs(e.type, "mouseup"))) {
+      return true;
+    }
+
+    if (root.curEditNode) {
+      view.editNodeBlur = false;
+      root.curEditInput.focus();
+    }
+
+    return !root.curEditNode && (_uCanDo ? _uCanDo.apply(view, arguments) : true);
+  };
+})(jQuery__WEBPACK_IMPORTED_MODULE_14___default.a);
 
 /***/ }),
 
@@ -6723,752 +8787,14 @@ if (typeof window !== 'undefined') {
 // Indicate to webpack that this file can be concatenated
 /* harmony default export */ var setPublicPath = (null);
 
-// EXTERNAL MODULE: ./packages/third-part-lib/ztree/js/jquery.ztree.core.js
-var jquery_ztree_core = __webpack_require__("8f23");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.index-of.js
-var es_array_index_of = __webpack_require__("c975");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.splice.js
-var es_array_splice = __webpack_require__("a434");
+// EXTERNAL MODULE: ./packages/third-part-lib/ztree/js/jquery.ztree.all.js
+var jquery_ztree_all = __webpack_require__("aa1b");
 
 // EXTERNAL MODULE: external "jQuery"
 var external_jQuery_ = __webpack_require__("781b");
 var external_jQuery_default = /*#__PURE__*/__webpack_require__.n(external_jQuery_);
 
-// CONCATENATED MODULE: ./packages/third-part-lib/ztree/js/jquery.ztree.excheck.js
-
-
-
-/*
- * JQuery zTree excheck
- * v3.5.44
- * http://treejs.cn/
- *
- * Copyright (c) 2010 Hunter.z
- *
- * Licensed same as jquery - MIT License
- * http://www.opensource.org/licenses/mit-license.php
- *
- * Date: 2020-04-29
- */
-
-
-(function ($) {
-  //default consts of excheck
-  var _consts = {
-    event: {
-      CHECK: "ztree_check"
-    },
-    id: {
-      CHECK: "_check"
-    },
-    checkbox: {
-      STYLE: "checkbox",
-      DEFAULT: "chk",
-      DISABLED: "disable",
-      FALSE: "false",
-      TRUE: "true",
-      FULL: "full",
-      PART: "part",
-      FOCUS: "focus"
-    },
-    radio: {
-      STYLE: "radio",
-      TYPE_ALL: "all",
-      TYPE_LEVEL: "level"
-    }
-  },
-      //default setting of excheck
-  _setting = {
-    check: {
-      enable: false,
-      autoCheckTrigger: false,
-      chkStyle: _consts.checkbox.STYLE,
-      nocheckInherit: false,
-      chkDisabledInherit: false,
-      radioType: _consts.radio.TYPE_LEVEL,
-      chkboxType: {
-        "Y": "ps",
-        "N": "ps"
-      }
-    },
-    data: {
-      key: {
-        checked: "checked"
-      }
-    },
-    callback: {
-      beforeCheck: null,
-      onCheck: null
-    }
-  },
-      //default root of excheck
-  _initRoot = function _initRoot(setting) {
-    var r = data.getRoot(setting);
-    r.radioCheckedList = [];
-  },
-      //default cache of excheck
-  _initCache = function _initCache(treeId) {},
-      //default bind event of excheck
-  _bindEvent = function _bindEvent(setting) {
-    var o = setting.treeObj,
-        c = consts.event;
-    o.bind(c.CHECK, function (event, srcEvent, treeId, node) {
-      event.srcEvent = srcEvent;
-      tools.apply(setting.callback.onCheck, [event, treeId, node]);
-    });
-  },
-      _unbindEvent = function _unbindEvent(setting) {
-    var o = setting.treeObj,
-        c = consts.event;
-    o.unbind(c.CHECK);
-  },
-      //default event proxy of excheck
-  _eventProxy = function _eventProxy(e) {
-    var target = e.target,
-        setting = data.getSetting(e.data.treeId),
-        tId = "",
-        node = null,
-        nodeEventType = "",
-        treeEventType = "",
-        nodeEventCallback = null,
-        treeEventCallback = null;
-
-    if (tools.eqs(e.type, "mouseover")) {
-      if (setting.check.enable && tools.eqs(target.tagName, "span") && target.getAttribute("treeNode" + consts.id.CHECK) !== null) {
-        tId = tools.getNodeMainDom(target).id;
-        nodeEventType = "mouseoverCheck";
-      }
-    } else if (tools.eqs(e.type, "mouseout")) {
-      if (setting.check.enable && tools.eqs(target.tagName, "span") && target.getAttribute("treeNode" + consts.id.CHECK) !== null) {
-        tId = tools.getNodeMainDom(target).id;
-        nodeEventType = "mouseoutCheck";
-      }
-    } else if (tools.eqs(e.type, "click")) {
-      if (setting.check.enable && tools.eqs(target.tagName, "span") && target.getAttribute("treeNode" + consts.id.CHECK) !== null) {
-        tId = tools.getNodeMainDom(target).id;
-        nodeEventType = "checkNode";
-      }
-    }
-
-    if (tId.length > 0) {
-      node = data.getNodeCache(setting, tId);
-
-      switch (nodeEventType) {
-        case "checkNode":
-          nodeEventCallback = _handler.onCheckNode;
-          break;
-
-        case "mouseoverCheck":
-          nodeEventCallback = _handler.onMouseoverCheck;
-          break;
-
-        case "mouseoutCheck":
-          nodeEventCallback = _handler.onMouseoutCheck;
-          break;
-      }
-    }
-
-    var proxyResult = {
-      stop: nodeEventType === "checkNode",
-      node: node,
-      nodeEventType: nodeEventType,
-      nodeEventCallback: nodeEventCallback,
-      treeEventType: treeEventType,
-      treeEventCallback: treeEventCallback
-    };
-    return proxyResult;
-  },
-      //default init node of excheck
-  _initNode = function _initNode(setting, level, n, parentNode, isFirstNode, isLastNode, openFlag) {
-    if (!n) return;
-    var checked = data.nodeChecked(setting, n);
-    n.checkedOld = checked;
-    if (typeof n.nocheck == "string") n.nocheck = tools.eqs(n.nocheck, "true");
-    n.nocheck = !!n.nocheck || setting.check.nocheckInherit && parentNode && !!parentNode.nocheck;
-    if (typeof n.chkDisabled == "string") n.chkDisabled = tools.eqs(n.chkDisabled, "true");
-    n.chkDisabled = !!n.chkDisabled || setting.check.chkDisabledInherit && parentNode && !!parentNode.chkDisabled;
-    if (typeof n.halfCheck == "string") n.halfCheck = tools.eqs(n.halfCheck, "true");
-    n.halfCheck = !!n.halfCheck;
-    n.check_Child_State = -1;
-    n.check_Focus = false;
-
-    n.getCheckStatus = function () {
-      return data.getCheckStatus(setting, n);
-    };
-
-    if (setting.check.chkStyle == consts.radio.STYLE && setting.check.radioType == consts.radio.TYPE_ALL && checked) {
-      var r = data.getRoot(setting);
-      r.radioCheckedList.push(n);
-    }
-  },
-      //add dom for check
-  _beforeA = function _beforeA(setting, node, html) {
-    if (setting.check.enable) {
-      data.makeChkFlag(setting, node);
-      html.push("<span ID='", node.tId, consts.id.CHECK, "' class='", view.makeChkClass(setting, node), "' treeNode", consts.id.CHECK, node.nocheck === true ? " style='display:none;'" : "", "></span>");
-    }
-  },
-      //update zTreeObj, add method of check
-  _zTreeTools = function _zTreeTools(setting, zTreeTools) {
-    zTreeTools.checkNode = function (node, checked, checkTypeFlag, callbackFlag) {
-      var nodeChecked = data.nodeChecked(setting, node);
-      if (node.chkDisabled === true) return;
-
-      if (checked !== true && checked !== false) {
-        checked = !nodeChecked;
-      }
-
-      callbackFlag = !!callbackFlag;
-
-      if (nodeChecked === checked && !checkTypeFlag) {
-        return;
-      } else if (callbackFlag && tools.apply(this.setting.callback.beforeCheck, [this.setting.treeId, node], true) == false) {
-        return;
-      }
-
-      if (tools.uCanDo(this.setting) && this.setting.check.enable && node.nocheck !== true) {
-        data.nodeChecked(setting, node, checked);
-        var checkObj = $$(node, consts.id.CHECK, this.setting);
-        if (checkTypeFlag || this.setting.check.chkStyle === consts.radio.STYLE) view.checkNodeRelation(this.setting, node);
-        view.setChkClass(this.setting, checkObj, node);
-        view.repairParentChkClassWithSelf(this.setting, node);
-
-        if (callbackFlag) {
-          this.setting.treeObj.trigger(consts.event.CHECK, [null, this.setting.treeId, node]);
-        }
-      }
-    };
-
-    zTreeTools.checkAllNodes = function (checked) {
-      view.repairAllChk(this.setting, !!checked);
-    };
-
-    zTreeTools.getCheckedNodes = function (checked) {
-      checked = checked !== false;
-      var children = data.nodeChildren(setting, data.getRoot(this.setting));
-      return data.getTreeCheckedNodes(this.setting, children, checked);
-    };
-
-    zTreeTools.getChangeCheckedNodes = function () {
-      var children = data.nodeChildren(setting, data.getRoot(this.setting));
-      return data.getTreeChangeCheckedNodes(this.setting, children);
-    };
-
-    zTreeTools.setChkDisabled = function (node, disabled, inheritParent, inheritChildren) {
-      disabled = !!disabled;
-      inheritParent = !!inheritParent;
-      inheritChildren = !!inheritChildren;
-      view.repairSonChkDisabled(this.setting, node, disabled, inheritChildren);
-      view.repairParentChkDisabled(this.setting, node.getParentNode(), disabled, inheritParent);
-    };
-
-    var _updateNode = zTreeTools.updateNode;
-
-    zTreeTools.updateNode = function (node, checkTypeFlag) {
-      if (_updateNode) _updateNode.apply(zTreeTools, arguments);
-      if (!node || !this.setting.check.enable) return;
-      var nObj = $$(node, this.setting);
-
-      if (nObj.get(0) && tools.uCanDo(this.setting)) {
-        var checkObj = $$(node, consts.id.CHECK, this.setting);
-        if (checkTypeFlag == true || this.setting.check.chkStyle === consts.radio.STYLE) view.checkNodeRelation(this.setting, node);
-        view.setChkClass(this.setting, checkObj, node);
-        view.repairParentChkClassWithSelf(this.setting, node);
-      }
-    };
-  },
-      //method of operate data
-  _data = {
-    getRadioCheckedList: function getRadioCheckedList(setting) {
-      var checkedList = data.getRoot(setting).radioCheckedList;
-
-      for (var i = 0, j = checkedList.length; i < j; i++) {
-        if (!data.getNodeCache(setting, checkedList[i].tId)) {
-          checkedList.splice(i, 1);
-          i--;
-          j--;
-        }
-      }
-
-      return checkedList;
-    },
-    getCheckStatus: function getCheckStatus(setting, node) {
-      if (!setting.check.enable || node.nocheck || node.chkDisabled) return null;
-      var checked = data.nodeChecked(setting, node),
-          r = {
-        checked: checked,
-        half: node.halfCheck ? node.halfCheck : setting.check.chkStyle == consts.radio.STYLE ? node.check_Child_State === 2 : checked ? node.check_Child_State > -1 && node.check_Child_State < 2 : node.check_Child_State > 0
-      };
-      return r;
-    },
-    getTreeCheckedNodes: function getTreeCheckedNodes(setting, nodes, checked, results) {
-      if (!nodes) return [];
-      var onlyOne = checked && setting.check.chkStyle == consts.radio.STYLE && setting.check.radioType == consts.radio.TYPE_ALL;
-      results = !results ? [] : results;
-
-      for (var i = 0, l = nodes.length; i < l; i++) {
-        var node = nodes[i];
-        var children = data.nodeChildren(setting, node);
-        var nodeChecked = data.nodeChecked(setting, node);
-
-        if (node.nocheck !== true && node.chkDisabled !== true && nodeChecked == checked) {
-          results.push(node);
-
-          if (onlyOne) {
-            break;
-          }
-        }
-
-        data.getTreeCheckedNodes(setting, children, checked, results);
-
-        if (onlyOne && results.length > 0) {
-          break;
-        }
-      }
-
-      return results;
-    },
-    getTreeChangeCheckedNodes: function getTreeChangeCheckedNodes(setting, nodes, results) {
-      if (!nodes) return [];
-      results = !results ? [] : results;
-
-      for (var i = 0, l = nodes.length; i < l; i++) {
-        var node = nodes[i];
-        var children = data.nodeChildren(setting, node);
-        var nodeChecked = data.nodeChecked(setting, node);
-
-        if (node.nocheck !== true && node.chkDisabled !== true && nodeChecked != node.checkedOld) {
-          results.push(node);
-        }
-
-        data.getTreeChangeCheckedNodes(setting, children, results);
-      }
-
-      return results;
-    },
-    makeChkFlag: function makeChkFlag(setting, node) {
-      if (!node) return;
-      var chkFlag = -1;
-      var children = data.nodeChildren(setting, node);
-
-      if (children) {
-        for (var i = 0, l = children.length; i < l; i++) {
-          var cNode = children[i];
-          var nodeChecked = data.nodeChecked(setting, cNode);
-          var tmp = -1;
-
-          if (setting.check.chkStyle == consts.radio.STYLE) {
-            if (cNode.nocheck === true || cNode.chkDisabled === true) {
-              tmp = cNode.check_Child_State;
-            } else if (cNode.halfCheck === true) {
-              tmp = 2;
-            } else if (nodeChecked) {
-              tmp = 2;
-            } else {
-              tmp = cNode.check_Child_State > 0 ? 2 : 0;
-            }
-
-            if (tmp == 2) {
-              chkFlag = 2;
-              break;
-            } else if (tmp == 0) {
-              chkFlag = 0;
-            }
-          } else if (setting.check.chkStyle == consts.checkbox.STYLE) {
-            if (cNode.nocheck === true || cNode.chkDisabled === true) {
-              tmp = cNode.check_Child_State;
-            } else if (cNode.halfCheck === true) {
-              tmp = 1;
-            } else if (nodeChecked) {
-              tmp = cNode.check_Child_State === -1 || cNode.check_Child_State === 2 ? 2 : 1;
-            } else {
-              tmp = cNode.check_Child_State > 0 ? 1 : 0;
-            }
-
-            if (tmp === 1) {
-              chkFlag = 1;
-              break;
-            } else if (tmp === 2 && chkFlag > -1 && i > 0 && tmp !== chkFlag) {
-              chkFlag = 1;
-              break;
-            } else if (chkFlag === 2 && tmp > -1 && tmp < 2) {
-              chkFlag = 1;
-              break;
-            } else if (tmp > -1) {
-              chkFlag = tmp;
-            }
-          }
-        }
-      }
-
-      node.check_Child_State = chkFlag;
-    }
-  },
-      //method of event proxy
-  _event = {},
-      //method of event handler
-  _handler = {
-    onCheckNode: function onCheckNode(event, node) {
-      if (node.chkDisabled === true) return false;
-      var setting = data.getSetting(event.data.treeId);
-      if (tools.apply(setting.callback.beforeCheck, [setting.treeId, node], true) == false) return true;
-      var nodeChecked = data.nodeChecked(setting, node);
-      data.nodeChecked(setting, node, !nodeChecked);
-      view.checkNodeRelation(setting, node);
-      var checkObj = $$(node, consts.id.CHECK, setting);
-      view.setChkClass(setting, checkObj, node);
-      view.repairParentChkClassWithSelf(setting, node);
-      setting.treeObj.trigger(consts.event.CHECK, [event, setting.treeId, node]);
-      return true;
-    },
-    onMouseoverCheck: function onMouseoverCheck(event, node) {
-      if (node.chkDisabled === true) return false;
-      var setting = data.getSetting(event.data.treeId),
-          checkObj = $$(node, consts.id.CHECK, setting);
-      node.check_Focus = true;
-      view.setChkClass(setting, checkObj, node);
-      return true;
-    },
-    onMouseoutCheck: function onMouseoutCheck(event, node) {
-      if (node.chkDisabled === true) return false;
-      var setting = data.getSetting(event.data.treeId),
-          checkObj = $$(node, consts.id.CHECK, setting);
-      node.check_Focus = false;
-      view.setChkClass(setting, checkObj, node);
-      return true;
-    }
-  },
-      //method of tools for zTree
-  _tools = {},
-      //method of operate ztree dom
-  _view = {
-    checkNodeRelation: function checkNodeRelation(setting, node) {
-      var pNode,
-          i,
-          l,
-          r = consts.radio;
-      var nodeChecked = data.nodeChecked(setting, node);
-
-      if (setting.check.chkStyle == r.STYLE) {
-        var checkedList = data.getRadioCheckedList(setting);
-
-        if (nodeChecked) {
-          if (setting.check.radioType == r.TYPE_ALL) {
-            for (i = checkedList.length - 1; i >= 0; i--) {
-              pNode = checkedList[i];
-              var pNodeChecked = data.nodeChecked(setting, pNode);
-
-              if (pNodeChecked && pNode != node) {
-                data.nodeChecked(setting, pNode, false);
-                checkedList.splice(i, 1);
-                view.setChkClass(setting, $$(pNode, consts.id.CHECK, setting), pNode);
-
-                if (pNode.parentTId != node.parentTId) {
-                  view.repairParentChkClassWithSelf(setting, pNode);
-                }
-              }
-            }
-
-            checkedList.push(node);
-          } else {
-            var parentNode = node.parentTId ? node.getParentNode() : data.getRoot(setting);
-            var children = data.nodeChildren(setting, parentNode);
-
-            for (i = 0, l = children.length; i < l; i++) {
-              pNode = children[i];
-              var pNodeChecked = data.nodeChecked(setting, pNode);
-
-              if (pNodeChecked && pNode != node) {
-                data.nodeChecked(setting, pNode, false);
-                view.setChkClass(setting, $$(pNode, consts.id.CHECK, setting), pNode);
-              }
-            }
-          }
-        } else if (setting.check.radioType == r.TYPE_ALL) {
-          for (i = 0, l = checkedList.length; i < l; i++) {
-            if (node == checkedList[i]) {
-              checkedList.splice(i, 1);
-              break;
-            }
-          }
-        }
-      } else {
-        var children = data.nodeChildren(setting, node);
-
-        if (nodeChecked && (!children || children.length == 0 || setting.check.chkboxType.Y.indexOf("s") > -1)) {
-          view.setSonNodeCheckBox(setting, node, true);
-        }
-
-        if (!nodeChecked && (!children || children.length == 0 || setting.check.chkboxType.N.indexOf("s") > -1)) {
-          view.setSonNodeCheckBox(setting, node, false);
-        }
-
-        if (nodeChecked && setting.check.chkboxType.Y.indexOf("p") > -1) {
-          view.setParentNodeCheckBox(setting, node, true);
-        }
-
-        if (!nodeChecked && setting.check.chkboxType.N.indexOf("p") > -1) {
-          view.setParentNodeCheckBox(setting, node, false);
-        }
-      }
-    },
-    makeChkClass: function makeChkClass(setting, node) {
-      var c = consts.checkbox,
-          r = consts.radio,
-          fullStyle = "";
-      var nodeChecked = data.nodeChecked(setting, node);
-
-      if (node.chkDisabled === true) {
-        fullStyle = c.DISABLED;
-      } else if (node.halfCheck) {
-        fullStyle = c.PART;
-      } else if (setting.check.chkStyle == r.STYLE) {
-        fullStyle = node.check_Child_State < 1 ? c.FULL : c.PART;
-      } else {
-        fullStyle = nodeChecked ? node.check_Child_State === 2 || node.check_Child_State === -1 ? c.FULL : c.PART : node.check_Child_State < 1 ? c.FULL : c.PART;
-      }
-
-      var chkName = setting.check.chkStyle + "_" + (nodeChecked ? c.TRUE : c.FALSE) + "_" + fullStyle;
-      chkName = node.check_Focus && node.chkDisabled !== true ? chkName + "_" + c.FOCUS : chkName;
-      return consts.className.BUTTON + " " + c.DEFAULT + " " + chkName;
-    },
-    repairAllChk: function repairAllChk(setting, checked) {
-      if (setting.check.enable && setting.check.chkStyle === consts.checkbox.STYLE) {
-        var root = data.getRoot(setting);
-        var children = data.nodeChildren(setting, root);
-
-        for (var i = 0, l = children.length; i < l; i++) {
-          var node = children[i];
-
-          if (node.nocheck !== true && node.chkDisabled !== true) {
-            data.nodeChecked(setting, node, checked);
-          }
-
-          view.setSonNodeCheckBox(setting, node, checked);
-        }
-      }
-    },
-    repairChkClass: function repairChkClass(setting, node) {
-      if (!node) return;
-      data.makeChkFlag(setting, node);
-
-      if (node.nocheck !== true) {
-        var checkObj = $$(node, consts.id.CHECK, setting);
-        view.setChkClass(setting, checkObj, node);
-      }
-    },
-    repairParentChkClass: function repairParentChkClass(setting, node) {
-      if (!node || !node.parentTId) return;
-      var pNode = node.getParentNode();
-      view.repairChkClass(setting, pNode);
-      view.repairParentChkClass(setting, pNode);
-    },
-    repairParentChkClassWithSelf: function repairParentChkClassWithSelf(setting, node) {
-      if (!node) return;
-      var children = data.nodeChildren(setting, node);
-
-      if (children && children.length > 0) {
-        view.repairParentChkClass(setting, children[0]);
-      } else {
-        view.repairParentChkClass(setting, node);
-      }
-    },
-    repairSonChkDisabled: function repairSonChkDisabled(setting, node, chkDisabled, inherit) {
-      if (!node) return;
-
-      if (node.chkDisabled != chkDisabled) {
-        node.chkDisabled = chkDisabled;
-      }
-
-      view.repairChkClass(setting, node);
-      var children = data.nodeChildren(setting, node);
-
-      if (children && inherit) {
-        for (var i = 0, l = children.length; i < l; i++) {
-          var sNode = children[i];
-          view.repairSonChkDisabled(setting, sNode, chkDisabled, inherit);
-        }
-      }
-    },
-    repairParentChkDisabled: function repairParentChkDisabled(setting, node, chkDisabled, inherit) {
-      if (!node) return;
-
-      if (node.chkDisabled != chkDisabled && inherit) {
-        node.chkDisabled = chkDisabled;
-      }
-
-      view.repairChkClass(setting, node);
-      view.repairParentChkDisabled(setting, node.getParentNode(), chkDisabled, inherit);
-    },
-    setChkClass: function setChkClass(setting, obj, node) {
-      if (!obj) return;
-
-      if (node.nocheck === true) {
-        obj.hide();
-      } else {
-        obj.show();
-      }
-
-      obj.attr('class', view.makeChkClass(setting, node));
-    },
-    setParentNodeCheckBox: function setParentNodeCheckBox(setting, node, value, srcNode) {
-      var checkObj = $$(node, consts.id.CHECK, setting);
-      if (!srcNode) srcNode = node;
-      data.makeChkFlag(setting, node);
-
-      if (node.nocheck !== true && node.chkDisabled !== true) {
-        data.nodeChecked(setting, node, value);
-        view.setChkClass(setting, checkObj, node);
-
-        if (setting.check.autoCheckTrigger && node != srcNode) {
-          setting.treeObj.trigger(consts.event.CHECK, [null, setting.treeId, node]);
-        }
-      }
-
-      if (node.parentTId) {
-        var pSign = true;
-
-        if (!value) {
-          var pNodes = data.nodeChildren(setting, node.getParentNode());
-
-          for (var i = 0, l = pNodes.length; i < l; i++) {
-            var pNode = pNodes[i];
-            var nodeChecked = data.nodeChecked(setting, pNode);
-
-            if (pNode.nocheck !== true && pNode.chkDisabled !== true && nodeChecked || (pNode.nocheck === true || pNode.chkDisabled === true) && pNode.check_Child_State > 0) {
-              pSign = false;
-              break;
-            }
-          }
-        }
-
-        if (pSign) {
-          view.setParentNodeCheckBox(setting, node.getParentNode(), value, srcNode);
-        }
-      }
-    },
-    setSonNodeCheckBox: function setSonNodeCheckBox(setting, node, value, srcNode) {
-      if (!node) return;
-      var checkObj = $$(node, consts.id.CHECK, setting);
-      if (!srcNode) srcNode = node;
-      var hasDisable = false;
-      var children = data.nodeChildren(setting, node);
-
-      if (children) {
-        for (var i = 0, l = children.length; i < l; i++) {
-          var sNode = children[i];
-          view.setSonNodeCheckBox(setting, sNode, value, srcNode);
-          if (sNode.chkDisabled === true) hasDisable = true;
-        }
-      }
-
-      if (node != data.getRoot(setting) && node.chkDisabled !== true) {
-        if (hasDisable && node.nocheck !== true) {
-          data.makeChkFlag(setting, node);
-        }
-
-        if (node.nocheck !== true && node.chkDisabled !== true) {
-          data.nodeChecked(setting, node, value);
-          if (!hasDisable) node.check_Child_State = children && children.length > 0 ? value ? 2 : 0 : -1;
-        } else {
-          node.check_Child_State = -1;
-        }
-
-        view.setChkClass(setting, checkObj, node);
-
-        if (setting.check.autoCheckTrigger && node != srcNode && node.nocheck !== true && node.chkDisabled !== true) {
-          setting.treeObj.trigger(consts.event.CHECK, [null, setting.treeId, node]);
-        }
-      }
-    }
-  },
-      _z = {
-    tools: _tools,
-    view: _view,
-    event: _event,
-    data: _data
-  };
-
-  $.extend(true, $.fn.zTree.consts, _consts);
-  $.extend(true, $.fn.zTree._z, _z);
-  var zt = $.fn.zTree,
-      tools = zt._z.tools,
-      consts = zt.consts,
-      view = zt._z.view,
-      data = zt._z.data,
-      event = zt._z.event,
-      $$ = tools.$;
-
-  data.nodeChecked = function (setting, node, newChecked) {
-    if (!node) {
-      return false;
-    }
-
-    var key = setting.data.key.checked;
-
-    if (typeof newChecked !== 'undefined') {
-      if (typeof newChecked === "string") {
-        newChecked = tools.eqs(newChecked, "true");
-      }
-
-      newChecked = !!newChecked;
-      node[key] = newChecked;
-    } else if (typeof node[key] == "string") {
-      node[key] = tools.eqs(node[key], "true");
-    } else {
-      node[key] = !!node[key];
-    }
-
-    return node[key];
-  };
-
-  data.exSetting(_setting);
-  data.addInitBind(_bindEvent);
-  data.addInitUnBind(_unbindEvent);
-  data.addInitCache(_initCache);
-  data.addInitNode(_initNode);
-  data.addInitProxy(_eventProxy, true);
-  data.addInitRoot(_initRoot);
-  data.addBeforeA(_beforeA);
-  data.addZTreeTools(_zTreeTools);
-  var _createNodes = view.createNodes;
-
-  view.createNodes = function (setting, level, nodes, parentNode, index) {
-    if (_createNodes) _createNodes.apply(view, arguments);
-    if (!nodes) return;
-    view.repairParentChkClassWithSelf(setting, parentNode);
-  };
-
-  var _removeNode = view.removeNode;
-
-  view.removeNode = function (setting, node) {
-    var parentNode = node.getParentNode();
-    if (_removeNode) _removeNode.apply(view, arguments);
-    if (!node || !parentNode) return;
-    view.repairChkClass(setting, parentNode);
-    view.repairParentChkClass(setting, parentNode);
-  };
-
-  var _appendNodes = view.appendNodes;
-
-  view.appendNodes = function (setting, level, nodes, parentNode, index, initFlag, openFlag) {
-    var html = "";
-
-    if (_appendNodes) {
-      html = _appendNodes.apply(view, arguments);
-    }
-
-    if (parentNode) {
-      data.makeChkFlag(setting, parentNode);
-    }
-
-    return html;
-  };
-})(external_jQuery_default.a);
 // CONCATENATED MODULE: ./packages/ZTree.js
-
 
 
 var rkTree = external_jQuery_default.a.fn.zTree;

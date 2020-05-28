@@ -1,6 +1,6 @@
 {
   "name": "rk-tree",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "main": "rkTree/rkTree.umd.js",
   "scripts": {

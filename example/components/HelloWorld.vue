@@ -21,10 +21,10 @@ export default {
             children: "childList"
           }
         },
-        // check : {
-        //   enable : true,
-        //   chkStyle : "checkbox"
-        // },
+        check : {
+          enable : true,
+          chkStyle : "checkbox"
+        },
       }
     }
   },

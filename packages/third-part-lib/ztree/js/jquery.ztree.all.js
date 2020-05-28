@@ -10,7 +10,7 @@
  *
  * Date: 2020-04-29
  */
-
+import jQuery from 'jQuery';
 (function ($) {
   var settings = {}, roots = {}, caches = {},
     //default consts of core
@@ -1330,7 +1330,7 @@
           fontStyle.push(f, ":", fontcss[f], ";");
         }
         html.push("<a id='", node.tId, consts.id.A, "' class='", consts.className.LEVEL, node.level,
-          nodeClasses.add ? ' ' + nodeClasses.add.join(' ') : '', 
+          nodeClasses.add ? ' ' + nodeClasses.add.join(' ') : '',
           "' treeNode", consts.id.A, " onclick=\"", (node.click || ''),
           "\" ", ((url != null && url.length > 0) ? "href='" + url + "'" : ""), " target='", view.makeNodeTarget(node), "' style='", fontStyle.join(''),
           "'");
